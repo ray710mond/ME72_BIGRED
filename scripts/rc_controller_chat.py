@@ -14,8 +14,8 @@ ADDRESS       = 0x80      # Packet serial address set in Motion Studio
 CHIP_NAME = "gpiochip4"   # RP1 40-pin header on Pi 5
 
 # CHANGE THESE to the lines you wired:
-THROTTLE_LINE_OFFSET = 27  # e.g. GPIO27 (pin 13) = left stick up/down
-STEER_LINE_OFFSET    = 17  # e.g. GPIO17 (pin 11) = right stick left/right
+THROTTLE_LINE_OFFSET = 17  # e.g. GPIO27 (pin 13) = left stick up/down
+STEER_LINE_OFFSET    = 27  # e.g. GPIO17 (pin 11) = right stick left/right
 
 # Pulse range (tweak after you measure real values)
 PULSE_MIN_US    = 1000.0
