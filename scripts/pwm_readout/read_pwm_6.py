@@ -4,7 +4,7 @@ import time
 
 # Use the RP1 pin controller – this is the 40-pin header
 CHIP_NAME = "gpiochip4"
-LINE_OFFSET = 27          # GPIO17 = Pin 11 on the header
+LINE_OFFSET = 24        
 
 chip = gpiod.Chip(CHIP_NAME)
 
