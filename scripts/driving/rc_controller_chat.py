@@ -17,8 +17,8 @@ CHIP_NAME = "gpiochip4"   # RP1 40-pin header on Pi 5
 CHANNEL_PINS = [27, 17, 22, 25, 23, 24]
 
 # For motor control, use CH1 and CH2 as throttle/steer:
-THROTTLE_CH_INDEX = 0  
-STEER_CH_INDEX    = 3 
+THROTTLE_IDX = 1  
+STEER_IDX    = 3 
 
 # Pulse range (tweak after you measure real values)
 PULSE_MIN_US    = 1000.0
@@ -202,11 +202,11 @@ def main():
 			norms = [pulse_to_norm(pw) for pw in pulses]
 
 			# Use CH1 and CH2 for throttle/steer
-			throttle_pw = pulses[THROTTLE_CH_INDEX]
-			steer_pw    = pulses[STEER_CH_INDEX]
+			throttle_pw = pulses[STEER_IDX]
+			steer_pw    = pulses[THROTTLE_IDX]
 
-			throttle = norms[THROTTLE_CH_INDEX]
-			steer    = norms[STEER_CH_INDEX]
+			throttle = norms[STEER_IDX]
+			steer    = norms[THROTTLE_IDX]
 
 			# Optional: invert axes if they feel backwards
 			# throttle = -throttle
