@@ -1,5 +1,7 @@
 devel/
 logs/
+log/
+share/
 build/
 install/
 bin/
@@ -50,3 +52,4 @@ qtcreator-*
 
 # Catkin custom files
 CATKIN_IGNORE
+COLCON_IGNORE
