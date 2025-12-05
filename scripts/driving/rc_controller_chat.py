@@ -19,8 +19,9 @@ CHANNEL_PINS = [25, 17, 27, 22, 23, 24]
 THROTTLE_CHNL = 2
 STEER_CHNL = 4
 
-THROTTLE_IDX    = THROTTLE_CHNL - 1 
-STEER_IDX = STEER_CHNL - 1
+
+STEER_IDX    = STEER_CHNL - 1 
+THROTTLE_IDX = THROTTLE_CHNL - 1
 
 # Pulse range (tweak after you measure real values)
 PULSE_MIN_US    = 1000.0
@@ -135,15 +136,15 @@ def pulse_to_norm(
 		return max(-1.0, offset / (center - min_us))
 
 
-def mix_throttle_steer(throttle, steer):
+def mix_steer_throttle(steer, throttle):
 	"""
 	Standard differential mix:
-	- throttle: forward/back
-	- steer: left/right (positive = turn right)
+	- steer: forward/back
+	- throttle: left/right (positive = turn right)
 	Returns (left, right) commands in −1..+1
 	"""
-	left  = throttle + steer
-	right = throttle - steer
+	left  = steer + throttle
+	right = steer - throttle
 
 	# Clip to [-1, 1]
 	left  = max(-1.0, min(1.0, left))
@@ -203,21 +204,22 @@ def main():
 			# 2) Convert all to −1..+1
 			norms = [pulse_to_norm(pw) for pw in pulses]
 
-			# Use CH1 and CH2 for throttle/steer
-			throttle_pw = pulses[THROTTLE_IDX]
-			steer_pw    = pulses[STEER_IDX]
+			# Use CH1 and CH2 for steer/throttle
+			steer_pw = pulses[STEER_IDX]
+			throttle_pw    = pulses[THROTTLE_IDX]
 
-			STEER_GAIN = 0.5
+			THROTTLE_GAIN = 1.0
+			STEER_GAIN = 0.25
 
-			throttle = norms[THROTTLE_IDX]
-			steer    = norms[STEER_IDX] * STEER_GAIN
+			steer = norms[STEER_IDX] * STEER_GAIN
+			throttle    = norms[THROTTLE_IDX] * THROTTLE_GAIN
 
 			# Optional: invert axes if they feel backwards
-			# throttle = -throttle
-			# steer    = -steer
+			# steer = -steer
+			# throttle    = -throttle
 
 			# 3) Mix into left/right motor commands
-			left_cmd, right_cmd = mix_throttle_steer(throttle, steer)
+			left_cmd, right_cmd = mix_steer_throttle(steer, throttle)
 
 			# 4) Send to RoboClaw
 			send_motor_norm_duty(rc, ADDRESS, left_cmd, right_cmd)

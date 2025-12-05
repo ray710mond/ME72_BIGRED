@@ -8,7 +8,7 @@ import time
 CHIP_NAME = "gpiochip4"
 
 # Fixed channel order: CH1..CH6
-CHANNEL_PINS = [27, 17, 22, 25, 23, 24]
+CHANNEL_PINS = [25, 17, 27, 22, 23, 24]
 
 LOOP_DT = 0.02  # 50 Hz
 
