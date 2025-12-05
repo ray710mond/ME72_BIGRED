@@ -14,11 +14,13 @@ ADDRESS       = 0x80      # Packet serial address set in Motion Studio
 CHIP_NAME = "gpiochip4"   # RP1 40-pin header on Pi 5
 
 # Channels 1–6 wired to these GPIOs (in order):
-CHANNEL_PINS = [27, 17, 22, 25, 23, 24]
+CHANNEL_PINS = [25, 17, 27, 22, 23, 24]
 
-# For motor control, use CH1 and CH2 as throttle/steer:
-THROTTLE_IDX = 1  
-STEER_IDX    = 3 
+THROTTLE_CHNL = 2
+STEER_CHNL = 4
+
+THROTTLE_IDX    = THROTTLE_CHNL - 1 
+STEER_IDX = STEER_CHNL - 1
 
 # Pulse range (tweak after you measure real values)
 PULSE_MIN_US    = 1000.0
@@ -202,13 +204,13 @@ def main():
 			norms = [pulse_to_norm(pw) for pw in pulses]
 
 			# Use CH1 and CH2 for throttle/steer
-			throttle_pw = pulses[STEER_IDX]
-			steer_pw    = pulses[THROTTLE_IDX]
+			throttle_pw = pulses[THROTTLE_IDX]
+			steer_pw    = pulses[STEER_IDX]
 
 			STEER_GAIN = 0.5
 
-			throttle = norms[STEER_IDX]
-			steer    = norms[THROTTLE_IDX] * STEER_GAIN
+			throttle = norms[THROTTLE_IDX]
+			steer    = norms[STEER_IDX] * STEER_GAIN
 
 			# Optional: invert axes if they feel backwards
 			# throttle = -throttle
