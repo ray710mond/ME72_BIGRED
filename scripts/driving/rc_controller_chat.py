@@ -205,8 +205,10 @@ def main():
 			throttle_pw = pulses[STEER_IDX]
 			steer_pw    = pulses[THROTTLE_IDX]
 
+			STEER_GAIN = 0.5
+
 			throttle = norms[STEER_IDX]
-			steer    = norms[THROTTLE_IDX]
+			steer    = norms[THROTTLE_IDX] * STEER_GAIN
 
 			# Optional: invert axes if they feel backwards
 			# throttle = -throttle
