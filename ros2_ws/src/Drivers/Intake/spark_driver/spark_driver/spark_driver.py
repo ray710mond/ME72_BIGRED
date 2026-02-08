@@ -24,7 +24,7 @@ class IntakeSparkGpiod(Node):
 	GPIO_LINE = 12           # GPIO12 (BCM 12), PWM0-capable pin
 
 	PWM_STOP_US = 1500
-	PWM_FWD_US  = 2000
+	PWM_FWD_US  = 800
 	PERIOD_US   = 20_000     # 50Hz
 
 	ARM_SECONDS = 2.0
