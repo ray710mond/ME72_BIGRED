@@ -15,11 +15,13 @@ CHANNEL_PINS = [17, 27, 22, 23, 24, 25]
 THROTTLE_CHNL = 2
 STEER_CHNL = 4
 INTAKE_CHNL = 5
+OUTTAKE_CHNL = 6
 
 
 STEER_IDX    = STEER_CHNL - 1 
 THROTTLE_IDX = THROTTLE_CHNL - 1
 INTAKE_IDX = INTAKE_CHNL - 1
+OUTTAKE_IDX = OUTTAKE_CHNL - 1
 
 # Pulse range (tweak after you measure real values)
 PULSE_MIN_US    = 1000.0
@@ -186,6 +188,7 @@ try:
 	rclpy.init()
 	node = Node('rf_driver')
 	intake_pub = node.create_publisher(Bool, 'intake_running', 10)
+	outtake_pub = node.create_publisher(Bool, 'outtake_open', 10)
 	cmd_pub = node.create_publisher(Twist, 'cmd_vel_des', 10)
 
 	while True:
@@ -216,9 +219,9 @@ try:
 		twist = Twist()
 		# Map existing signals: `steer` -> forward/back (linear.x),
 		# `throttle` -> rotation (angular.z). Leave linear.y zero.
-		twist.linear.x = float(steer)
+		twist.linear.x = float(throttle)
 		twist.linear.y = 0.0
-		twist.angular.z = float(throttle)
+		twist.angular.z = float(steer)
 		cmd_pub.publish(twist)
 
 		# Publish intake_running based on channel 5 (switch toggles ~1000/2000 us)
@@ -229,6 +232,14 @@ try:
 			msg.data = bool(intake_on)
 			intake_pub.publish(msg)
 
+		# Publish outtake_open based on channel 6 (switch toggles ~1000/2000 us)
+		outtake_pw = pulses[OUTTAKE_IDX]
+		if outtake_pw is not None:
+			outtake_open = outtake_pw > PULSE_CENTER_US
+			msg = Bool()
+			msg.data = bool(outtake_open)
+			outtake_pub.publish(msg)
+			
 		# Debug print for all 6 channels
 		ch_parts = []
 		for i in range(6):
