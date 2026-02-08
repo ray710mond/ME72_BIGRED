@@ -12,6 +12,8 @@ Install and setup ROS2 Jazzy
 
 Clean up sd writes to preserve lifespan
 
-Setup git and ros aliases
+Setup ros aliases
 
 clone repository
+
+install libgpoiod
