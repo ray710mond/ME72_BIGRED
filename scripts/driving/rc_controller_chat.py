@@ -14,7 +14,7 @@ ADDRESS       = 0x80      # Packet serial address set in Motion Studio
 CHIP_NAME = "gpiochip4"   # RP1 40-pin header on Pi 5
 
 # Channels 1–6 wired to these GPIOs (in order):
-CHANNEL_PINS = [25, 17, 27, 22, 23, 24]
+CHANNEL_PINS = [17, 27, 22, 23, 24, 25]
 
 THROTTLE_CHNL = 2
 STEER_CHNL = 4
