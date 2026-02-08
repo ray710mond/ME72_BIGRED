@@ -141,8 +141,8 @@ def mix_steer_throttle(steer, throttle):
 	- throttle: left/right (positive = turn right)
 	Returns (left, right) commands in −1..+1
 	"""
-	left  = steer + throttle
-	right = steer - throttle
+	left  = throttle + steer
+	right = throttle - steer
 
 	# Clip to [-1, 1]
 	left  = max(-1.0, min(1.0, left))
