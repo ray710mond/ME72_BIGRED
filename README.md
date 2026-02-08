@@ -10,6 +10,8 @@ Setup any other networks (/etc/netplan/50-cloud-init.yaml)
 
 Install and setup ROS2 Jazzy
 
+Clean up sd writes to preserve lifespan
+
 Setup git and ros aliases
 
 clone repository
