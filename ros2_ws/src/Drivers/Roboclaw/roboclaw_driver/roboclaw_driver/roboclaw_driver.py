@@ -22,7 +22,7 @@ class RoboclawDriver(Node):
 
         # Parameters
         self.declare_parameter('port', '/dev/ttyAMA0')
-        self.declare_parameter('baud', 38400)
+        self.declare_parameter('baud', 115200)
         self.declare_parameter('address', 0x80)
 
         port = str(self.get_parameter('port').value)
