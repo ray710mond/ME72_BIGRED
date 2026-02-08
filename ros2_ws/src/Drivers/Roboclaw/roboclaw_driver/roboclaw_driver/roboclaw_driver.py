@@ -11,7 +11,9 @@ from geometry_msgs.msg import Twist
 
 from std_msgs.msg import Bool
 
-from roboclaw_3 import Roboclaw
+# from roboclaw_3 import Roboclaw
+from .roboclaw_python.roboclaw_3 import Roboclaw
+
 
 
 class RoboclawDriver(Node):
