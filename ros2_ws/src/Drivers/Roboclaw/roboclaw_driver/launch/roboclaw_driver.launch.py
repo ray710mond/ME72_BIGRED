@@ -10,11 +10,6 @@ def generate_launch_description():
 			executable='roboclaw_driver',
 			name='roboclaw_driver',
 			output='screen',
-			parameters=[
-				{'port': '/dev/ttyAMA0'},
-				{'baud': 38400},
-				{'address': 128},
-			],
 		),
 	])
 

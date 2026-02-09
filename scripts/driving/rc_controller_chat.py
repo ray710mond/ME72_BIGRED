@@ -20,8 +20,8 @@ THROTTLE_CHNL = 2
 STEER_CHNL = 4
 
 
-STEER_IDX    = STEER_CHNL - 1 
 THROTTLE_IDX = THROTTLE_CHNL - 1
+STEER_IDX    = STEER_CHNL - 1 
 
 # Pulse range (tweak after you measure real values)
 PULSE_MIN_US    = 1000.0
@@ -143,8 +143,8 @@ def mix_steer_throttle(steer, throttle):
 	- throttle: left/right (positive = turn right)
 	Returns (left, right) commands in −1..+1
 	"""
-	left  = steer + throttle
-	right = steer - throttle
+	left  = throttle + steer
+	right = throttle - steer
 
 	# Clip to [-1, 1]
 	left  = max(-1.0, min(1.0, left))

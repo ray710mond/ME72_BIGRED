@@ -44,12 +44,12 @@ class RoboclawDriver(Node):
 
     def _cmd_cb(self, msg: Twist):
         # Expect msg.linear.x (forward) and msg.angular.z (rotation)
-        steer = float(msg.linear.x)
-        throttle = float(msg.angular.z)
+        throttle = float(msg.linear.x)
+        steer = float(msg.angular.z)
 
         # Mix into left/right (same mixing as RF driver)
-        left = steer + throttle
-        right = steer - throttle
+        left = throttle + steer
+        right = throttle - steer
 
         # Clip
         left = max(-1.0, min(1.0, left))
@@ -88,7 +88,8 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        node.rc.DutyM1(node.address, 0)
+        node.rc.DutyM2(node.address, 0)
     finally:
         node.get_logger().info('roboclaw_driver shutting down')
         node.destroy_node()
