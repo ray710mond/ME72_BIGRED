@@ -30,7 +30,7 @@ class RoboclawDriver(Node):
         self.address = int(self.get_parameter('address').value)
 
         # Create Roboclaw instance and open
-        self.rc = Roboclaw(port, baud)
+        self.rc = Roboclaw(self, comport=port, rate=baud)
         try:
             self.rc.Open()
         except Exception as e:
@@ -72,10 +72,6 @@ class RoboclawDriver(Node):
             try:
                 self.rc.DutyM1(self.address, 0)
                 self.rc.DutyM2(self.address, 0)
-            except Exception:
-                pass
-            try:
-                self.rc._port.close()
             except Exception:
                 pass
         finally:
