@@ -30,12 +30,11 @@ class RoboclawDriver(Node):
         self.address = int(self.get_parameter('address').value)
 
         # Create Roboclaw instance and open
-        self.rc = Roboclaw(self, comport=port, rate=baud)
-        try:
-            self.rc.Open()
-        except Exception as e:
-            self.get_logger().error(f'Failed to open Roboclaw on {port}: {e}')
-            raise
+        self.rc = Roboclaw(comport=port, rate=baud)
+        opened = self.rc.Open()
+        if not opened:
+            self.get_logger().error(f'Failed to open Roboclaw on {port}: Open() returned {opened}')
+            raise RuntimeError(f'Failed to open Roboclaw on {port}')
 
         # Subscriber to Twist
         self.sub = self.create_subscription(Twist, 'cmd_vel_des', self._cmd_cb, 10)

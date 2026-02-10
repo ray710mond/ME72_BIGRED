@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import time
 import gpiod
+
 from roboclaw_3 import Roboclaw   # 👈 use BasicMicro's Python 3 library
+# from .roboclaw_python.roboclaw_3 import Roboclaw
 
 # ----------------- CONFIG -----------------
 
