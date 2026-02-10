@@ -23,7 +23,7 @@ class IntakeSparkGpiod(Node):
 	CHIP_NAME = "gpiochip4"  # Pi 5 header chip (matches your rf_driver)
 	GPIO_LINE = 12           # GPIO12 (BCM 12), PWM0-capable pin
 
-	PWM_STOP_US = 1500
+	PWM_STOP_US = 0
 	PWM_FWD_US  = 1000
 	PERIOD_US   = 20_000     # 50Hz
 
@@ -68,7 +68,7 @@ class IntakeSparkGpiod(Node):
 	def _pwm_loop(self):
 		"""
 		Software-timed 50Hz pulses.
-		High time: 1500us (stop) or 2000us (forward)
+		High time: 1500us (stop) or 1000us (forward)
 		"""
 		while not self._stop_evt.is_set():
 			high_us = self.PWM_FWD_US if self.intake_running else self.PWM_STOP_US
