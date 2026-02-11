@@ -18,8 +18,8 @@ INTAKE_CHNL = 5
 OUTTAKE_CHNL = 6
 
 
-STEER_IDX    = STEER_CHNL - 1 
 THROTTLE_IDX = THROTTLE_CHNL - 1
+STEER_IDX    = STEER_CHNL - 1 
 INTAKE_IDX = INTAKE_CHNL - 1
 OUTTAKE_IDX = OUTTAKE_CHNL - 1
 
@@ -136,7 +136,7 @@ def pulse_to_norm(
 		return max(-1.0, offset / (center - min_us))
 
 
-def mix_steer_throttle(steer, throttle):
+def mix_steer_throttle(throttle, steer):
 	"""
 	Standard differential mix:
 	- steer: forward/back
@@ -199,21 +199,22 @@ try:
 		norms = [pulse_to_norm(pw) for pw in pulses]
 
 		# Use CH1 and CH2 for steer/throttle
-		steer_pw = pulses[STEER_IDX]
 		throttle_pw = pulses[THROTTLE_IDX]
-
+		steer_pw = pulses[STEER_IDX]
+		
 		THROTTLE_GAIN = 1.0
 		STEER_GAIN = 0.25
 
-		steer = norms[STEER_IDX] * STEER_GAIN
 		throttle = norms[THROTTLE_IDX] * THROTTLE_GAIN
+		steer = norms[STEER_IDX] * STEER_GAIN
+		
 
 		# Optional: invert axes if they feel backwards
 		# steer = -steer
 		# throttle = -throttle
 
 		# 3) Mix into left/right motor commands (kept for debug print)
-		left_cmd, right_cmd = mix_steer_throttle(steer, throttle)
+		left_cmd, right_cmd = mix_steer_throttle(throttle, steer)
 
 		# 4) Publish desired velocity as Twist on `cmd_vel_des`
 		twist = Twist()

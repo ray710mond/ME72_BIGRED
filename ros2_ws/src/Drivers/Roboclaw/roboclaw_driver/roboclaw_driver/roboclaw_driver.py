@@ -21,7 +21,7 @@ class RoboclawDriver(Node):
         super().__init__('roboclaw_driver')
 
         # Parameters
-        self.declare_parameter('port', '/dev/ttyAMA0')
+        self.declare_parameter('port', '/dev/ttyACM0')
         self.declare_parameter('baud', 115200)
         self.declare_parameter('address', 0x80)
 
@@ -48,7 +48,7 @@ class RoboclawDriver(Node):
 
         # Mix into left/right (same mixing as RF driver)
         left = throttle + steer
-        right = throttle - steer
+        right = - (throttle - steer) #FLIP RIGHT MOTOR DIRECTION
 
         # Clip
         left = max(-1.0, min(1.0, left))
