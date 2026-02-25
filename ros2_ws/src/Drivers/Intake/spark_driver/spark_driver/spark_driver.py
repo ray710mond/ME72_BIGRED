@@ -1,102 +1,99 @@
 #!/usr/bin/env python3
+import os
 import time
 import threading
 
-import gpiod
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
 
-class IntakeSparkGpiod(Node):
+class IntakeSparkHwPwm(Node):
 	"""
 	Subscribes to `intake_running` (std_msgs/Bool).
-	If True -> constant forward (2000us @ 50Hz)
-	If False -> stop (1500us @ 50Hz)
+	If True -> forward (1000us pulse)
+	If False -> stop (no PWM output)
 
-	GPIO output uses SAME libgpiod request style as rf_driver:
-	  chip = gpiod.Chip("gpiochip4")
-	  line = chip.get_line(offset)
-	  line.request(consumer=..., type=gpiod.LINE_REQ_DIR_OUT)
+	Uses Pi 5 hardware PWM via sysfs for jitter-free output.
+	GPIO12 = PWM0 channel 0
 	"""
 
-	CHIP_NAME = "gpiochip4"  # Pi 5 header chip (matches your rf_driver)
-	GPIO_LINE = 12           # GPIO12 (BCM 12), PWM0-capable pin
+	PWM_CHIP = "/sys/class/pwm/pwmchip0"
+	PWM_CHANNEL = 0  # GPIO12 = PWM0 channel 0
 
-	PWM_STOP_US = 0
-	PWM_FWD_US  = 1000
-	PERIOD_US   = 20_000     # 50Hz
+	PERIOD_NS = 20_000_000   # 50Hz = 20ms
+	PWM_FWD_NS = 1_000_000   # 1000us = 1ms
 
 	ARM_SECONDS = 2.0
 
 	def __init__(self):
 		super().__init__("spark_driver")
 
-		# State
-		self.intake_running = False
-		self._stop_evt = threading.Event()
+		# Thread-safe state
+		self._lock = threading.Lock()
+		self._intake_running = False
 
-		# GPIO setup (same style as your rf_driver)
-		self.chip = gpiod.Chip(self.CHIP_NAME)
-		self.line = self.chip.get_line(self.GPIO_LINE)
-		self.line.request(
-			consumer="spark_pwm_out",
-			type=gpiod.LINE_REQ_DIR_OUT,
-			default_vals=[0]
-		)
+		# Hardware PWM setup
+		self.pwm_path = f"{self.PWM_CHIP}/pwm{self.PWM_CHANNEL}"
+		self._setup_hw_pwm()
 
 		# Subscriber
 		self.sub = self.create_subscription(Bool, "intake_running", self._on_intake, 10)
 
-		# Start PWM thread (always running; chooses pulse based on intake_running)
-		self.thread = threading.Thread(target=self._pwm_loop, daemon=True)
-		self.thread.start()
-
-		# Arm ESC: hold STOP for ARM_SECONDS
-		self.get_logger().info(f"Arming ESC: STOP {self.PWM_STOP_US}us for {self.ARM_SECONDS:.1f}s")
+		# Arm ESC: hold stopped state
+		self.get_logger().info(f"Arming ESC: stopped for {self.ARM_SECONDS:.1f}s")
 		time.sleep(self.ARM_SECONDS)
 
 		self.get_logger().info("Ready. Publish /intake_running (std_msgs/Bool).")
 
+	def _setup_hw_pwm(self):
+		"""Export and configure hardware PWM channel."""
+		# Export the channel if not already exported
+		if not os.path.exists(self.pwm_path):
+			with open(f"{self.PWM_CHIP}/export", "w") as f:
+				f.write(str(self.PWM_CHANNEL))
+			time.sleep(0.1)  # Wait for sysfs to create files
+
+		# Set period (must be set before duty_cycle)
+		with open(f"{self.pwm_path}/period", "w") as f:
+			f.write(str(self.PERIOD_NS))
+
+		# Start with 0 duty cycle (stopped)
+		with open(f"{self.pwm_path}/duty_cycle", "w") as f:
+			f.write("0")
+
+		# Enable PWM
+		with open(f"{self.pwm_path}/enable", "w") as f:
+			f.write("1")
+
+		self.get_logger().info(f"Hardware PWM initialized on {self.pwm_path}")
+
 	def _on_intake(self, msg: Bool):
 		new_state = bool(msg.data)
-		if new_state == self.intake_running:
-			return
-		self.intake_running = new_state
-		self.get_logger().info("INTAKE ON -> forward" if self.intake_running else "INTAKE OFF -> stop")
+		with self._lock:
+			if new_state == self._intake_running:
+				return
+			self._intake_running = new_state
 
-	def _pwm_loop(self):
-		"""
-		Software-timed 50Hz pulses.
-		High time: 1500us (stop) or 1000us (forward)
-		"""
-		while not self._stop_evt.is_set():
-			high_us = self.PWM_FWD_US if self.intake_running else self.PWM_STOP_US
+		# Set duty cycle based on state
+		duty_ns = self.PWM_FWD_NS if new_state else 0
+		try:
+			with open(f"{self.pwm_path}/duty_cycle", "w") as f:
+				f.write(str(duty_ns))
+		except OSError as e:
+			self.get_logger().error(f"Failed to set PWM duty cycle: {e}")
 
-			# HIGH portion
-			self.line.set_value(1)
-			time.sleep(high_us / 1_000_000.0)
-
-			# LOW portion
-			self.line.set_value(0)
-			low_us = self.PERIOD_US - high_us
-			if low_us > 0:
-				time.sleep(low_us / 1_000_000.0)
+		self.get_logger().info("INTAKE ON -> forward" if new_state else "INTAKE OFF -> stop")
 
 	def destroy_node(self):
 		# Fail-safe stop
 		try:
-			self.intake_running = False
-			time.sleep(0.05)
-			self._stop_evt.set()
-			if hasattr(self, "thread"):
-				self.thread.join(timeout=0.5)
-
-			if hasattr(self, "line"):
-				self.line.set_value(0)
-				self.line.release()
-			if hasattr(self, "chip"):
-				self.chip.close()
+			# Set duty cycle to 0 (stop)
+			with open(f"{self.pwm_path}/duty_cycle", "w") as f:
+				f.write("0")
+			# Disable PWM
+			with open(f"{self.pwm_path}/enable", "w") as f:
+				f.write("0")
 		except Exception:
 			pass
 
@@ -107,7 +104,7 @@ def main():
 	rclpy.init()
 	node = None
 	try:
-		node = IntakeSparkGpiod()
+		node = IntakeSparkHwPwm()
 		rclpy.spin(node)
 	except KeyboardInterrupt:
 		pass
