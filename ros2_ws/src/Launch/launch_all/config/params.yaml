@@ -1,0 +1,6 @@
+# Shared parameters for launch_all
+# Add tunable parameters for packages here.
+
+rf_driver:
+  driver_type: pwm  # 'pwm' or 'ibus'
+  chip_name: gpiochip4

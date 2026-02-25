@@ -1,11 +1,6 @@
 from setuptools import find_packages, setup
-from glob import glob
 
-package_name = 'rf_driver'
-
-otherfiles = [
-    ('share/' + package_name + '/launch', glob('launch/*')),
-]
+package_name = 'launch_all'
 
 setup(
     name=package_name,
@@ -15,13 +10,13 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-    ]+otherfiles,
+    ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='raymond',
     maintainer_email='ray710mond@gmail.com',
     description='TODO: Package description',
-    license='BIG RED',
+    license='BIGRED',
     extras_require={
         'test': [
             'pytest',
@@ -29,8 +24,6 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'rf_driver_ibus = rf_driver.rf_driver_ibus:main',
-            'rf_driver_pwm = rf_driver.rf_driver_pwm:main',
         ],
     },
 )
