@@ -15,3 +15,17 @@ autonomous_planner:
       - 0.00
       - 0.00
       - 1.0
+
+twist_mux:
+  ros__parameters:
+    output_topic: /cmd_vel_des
+    topics:
+      - name: autonomous
+        topic: /cmd_vel_auto
+        timeout: 0.5
+        priority: 50
+
+      - name: teleop
+        topic: /cmd_vel_teleop
+        timeout: 0.5
+        priority: 100
