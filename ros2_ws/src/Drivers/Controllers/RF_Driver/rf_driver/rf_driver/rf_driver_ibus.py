@@ -46,11 +46,13 @@ THROTTLE_CHNL = 2
 STEER_CHNL    = 4
 INTAKE_CHNL   = 5
 OUTTAKE_CHNL  = 6
+AUTO_CHNL     = 8
 
 THROTTLE_IDX = THROTTLE_CHNL - 1
 STEER_IDX    = STEER_CHNL - 1
 INTAKE_IDX   = INTAKE_CHNL - 1
 OUTTAKE_IDX  = OUTTAKE_CHNL - 1
+AUTO_IDX     = AUTO_CHNL - 1
 
 # iBUS typical value range is ~1000..2000, center ~1500
 PULSE_MIN_US    = 1000.0
@@ -259,6 +261,7 @@ class RfDriverIbusNode(Node):
         self.intake_pub = self.create_publisher(Bool, "intake_running", 10)
         self.outtake_pub = self.create_publisher(Bool, "outtake_open", 10)
         self.cmd_pub = self.create_publisher(Twist, "cmd_vel_des", 10)
+        self.autonomous_active = self.create_publisher(Bool, "autonomous_active", 10)
 
         self.ibus = IBusReader(IBUS_PORT, IBUS_BAUD, timeout=0.02)
 
@@ -308,6 +311,7 @@ class RfDriverIbusNode(Node):
         steer_pw    = safe_get(STEER_IDX)
         intake_pw   = safe_get(INTAKE_IDX)
         outtake_pw  = safe_get(OUTTAKE_IDX)
+        autonomous_pw = safe_get(AUTO_IDX)  # next channel after outtake
 
         throttle = pulse_to_norm(throttle_pw) * THROTTLE_GAIN
         steer    = pulse_to_norm(steer_pw) * STEER_GAIN
@@ -329,6 +333,10 @@ class RfDriverIbusNode(Node):
         msg = Bool()
         msg.data = bool((outtake_pw or PULSE_CENTER_US) > PULSE_CENTER_US)
         self.outtake_pub.publish(msg)
+
+        msg = Bool()
+        msg.data = bool((autonomous_pw or PULSE_CENTER_US) > PULSE_CENTER_US)
+        self.autonomous_active.publish(msg)
 
         # Debug print ALL channels (14), 10 Hz is too spammy — do 2 Hz
         if not hasattr(self, "_last_dump"):

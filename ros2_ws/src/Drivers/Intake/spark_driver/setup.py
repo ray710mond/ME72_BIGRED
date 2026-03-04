@@ -29,7 +29,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'spark_driver = spark_driver.spark_driver:main',
+            'spark_driver_hw = spark_driver.spark_driver_hw:main',
+            'spark_driver_sw = spark_driver.spark_driver_sw:main',
         ],
     },
 )
