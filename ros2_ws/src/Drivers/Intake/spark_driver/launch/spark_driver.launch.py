@@ -12,12 +12,14 @@ def generate_launch_description():
 		description='Driver type to launch: "hw" or "sw"',
 	)
 
+	namespace = os.uname().nodename
 	driver_type = LaunchConfiguration('driver_type')
 
 	hw_node = Node(
 		package='spark_driver',
 		executable='spark_driver_hw',
 		name='spark_driver_hw',
+		namespace=namespace,
 		output='screen',
 		parameters=[
 			{'pwm_pin': 18},
@@ -33,6 +35,7 @@ def generate_launch_description():
 		package='spark_driver',
 		executable='spark_driver_sw',
 		name='spark_driver_sw',
+		namespace=namespace,
 		output='screen',
 		parameters=[
 			{'pwm_pin': 18},

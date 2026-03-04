@@ -3,7 +3,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
-
+import os
 
 def generate_launch_description():
 	driver_type_arg = DeclareLaunchArgument(
@@ -11,6 +11,7 @@ def generate_launch_description():
 		default_value='ibus',
 		description='Driver type to launch: "ibus" or "pwm"',
 	)
+	namespace = os.uname().nodename
 
 	driver_type = LaunchConfiguration('driver_type')
 
@@ -18,6 +19,7 @@ def generate_launch_description():
 		package='rf_driver',
 		executable='rf_driver_pwm',
 		name='rf_driver_pwm',
+		namespace=namespace,
 		output='screen',
 		parameters=[{'chip_name': 'gpiochip4'}],
 		condition=IfCondition(PythonExpression(["'", driver_type, "' == 'pwm'"])),
@@ -27,6 +29,7 @@ def generate_launch_description():
 		package='rf_driver',
 		executable='rf_driver_ibus',
 		name='rf_driver_ibus',
+		namespace=namespace,
 		output='screen',
 		condition=IfCondition(PythonExpression(["'", driver_type, "' == 'ibus'"])),
 	)
