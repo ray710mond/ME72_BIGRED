@@ -4,3 +4,14 @@
 rf_driver:
   driver_type: pwm  # 'pwm' or 'ibus'
   chip_name: gpiochip4
+
+autonomous_planner:
+  ros__parameters:
+    publish_hz: 20.0
+    loop: false
+    segments:
+      # [vx, vy, wz, t] repeated
+      - 0.1
+      - 0.00
+      - 0.00
+      - 1.0

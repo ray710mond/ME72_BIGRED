@@ -15,8 +15,8 @@ PWM_HZ = 50.0
 PWM_PERIOD_S = 1.0 / PWM_HZ
 
 # Tune these if needed
-PULSE_CLOSED_S = 0.00055   # 1.0 ms
-PULSE_OPEN_S   = 0.0015   # 2.0 ms
+PULSE_CLOSED_S = 0.001   # 1.0 ms
+PULSE_OPEN_S   = 0.0024   # 2.0 ms
 
 # How long to pulse the servo to move (seconds)
 MOVE_TIME_S = 0.4

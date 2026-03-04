@@ -30,6 +30,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'line_following = autonomous_planner.line_following:main',
             'autonomous_planner = autonomous_planner.autonomous_planner:main',
         ],
     },

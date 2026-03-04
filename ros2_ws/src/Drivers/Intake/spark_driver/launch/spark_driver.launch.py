@@ -8,7 +8,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
 	driver_type_arg = DeclareLaunchArgument(
 		'driver_type',
-		default_value='sw',
+		default_value='hw',
 		description='Driver type to launch: "hw" or "sw"',
 	)
 
