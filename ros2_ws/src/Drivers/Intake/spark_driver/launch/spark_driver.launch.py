@@ -26,6 +26,7 @@ def generate_launch_description():
 			{'pulse_max_us': 2500},
 			{'duty_for_3000': 0.5},
 		],
+		condition=IfCondition(PythonExpression(["'", driver_type, "' == 'hw'"])),
 	)
 
 	sw_node = Node(
@@ -40,6 +41,7 @@ def generate_launch_description():
 			{'pulse_max_us': 2500},
 			{'duty_for_3000': 0.5},
 		],
+		condition=IfCondition(PythonExpression(["'", driver_type, "' == 'sw'"])),
 	)
 
 	return LaunchDescription([
