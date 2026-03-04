@@ -7,6 +7,7 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
+    namespace = os.uname().nodename
     # locate config
     pkg_share = get_package_share_directory('launch_all')
     cfg_file = os.path.join(pkg_share, 'config', 'params.yaml')
@@ -30,6 +31,7 @@ def generate_launch_description():
             package='rf_driver',
             executable='rf_driver_pwm',
             name='rf_driver_pwm',
+            namespace=namespace,
             output='screen',
             parameters=[{'chip_name': chip_name}],
         )
@@ -39,6 +41,7 @@ def generate_launch_description():
             package='rf_driver',
             executable='rf_driver_ibus',
             name='rf_driver_ibus',
+            namespace=namespace,
             output='screen',
         )
         ld.add_action(node)
