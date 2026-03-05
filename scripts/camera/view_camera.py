@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
-
-from picamera2 import Picamera2
 import cv2
 
 def main():
+    # Open the Pi camera using V4L2 interface
+    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)  # 0 = /dev/video0
 
-    picam2 = Picamera2()
-
-    config = picam2.create_preview_configuration()
-    picam2.configure(config)
-
-    picam2.start()
+    if not cap.isOpened():
+        print("Cannot open camera. Make sure the Pi camera is enabled and /dev/video0 exists.")
+        return
 
     print("Press 'q' to quit.")
 
     while True:
-        frame = picam2.capture_array()
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
+            break
 
+        # Show the frame in a window
         cv2.imshow("Live Camera Feed", frame)
 
+        # Quit on 'q'
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+    cap.release()
     cv2.destroyAllWindows()
-    picam2.stop()
 
 if __name__ == "__main__":
     main()
