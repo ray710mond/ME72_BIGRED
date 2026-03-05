@@ -1,3 +1,6 @@
 [submodule "third_party/libcamera"]
 	path = third_party/libcamera
 	url = https://github.com/raspberrypi/libcamera.git
+[submodule "third_party/rpicam-apps"]
+	path = third_party/rpicam-apps
+	url = https://github.com/raspberrypi/rpicam-apps.git
