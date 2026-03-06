@@ -1,40 +1,48 @@
 #!/usr/bin/env python3
+
 import cv2
+import subprocess
+import numpy as np
 
-def main():
-    # Open the Pi camera using V4L2
-    cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+cmd = [
+    "rpicam-vid",
+    "--codec", "mjpeg",
+    "--width", "640",
+    "--height", "480",
+    "--framerate", "30",
+    "--timeout", "0",
+    "--inline",
+    "--stdout"
+]
 
-    if not cap.isOpened():
-        print("Cannot open camera. Make sure /dev/video0 exists and the V4L2 driver is loaded.")
-        return
+pipe = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=10**8)
 
-    # Force MJPEG format (fast, matches rpicam-vid)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 30)
+buffer = b''
 
-    print("Press 'q' to quit.")
+print("Press 'q' to quit")
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to grab frame")
-            continue
+while True:
 
-        # Optional: show frame info in corner
-        cv2.putText(frame, f"{frame.shape[1]}x{frame.shape[0]} @30FPS",
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    buffer += pipe.stdout.read(4096)
 
-        cv2.imshow("Live Camera Feed", frame)
+    a = buffer.find(b'\xff\xd8')  # JPEG start
+    b = buffer.find(b'\xff\xd9')  # JPEG end
 
-        # Quit on 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    if a != -1 and b != -1 and b > a:
+        jpg = buffer[a:b+2]
+        buffer = buffer[b+2:]
 
-    cap.release()
-    cv2.destroyAllWindows()
+        frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
 
-if __name__ == "__main__":
-    main()
+        if frame is not None:
+
+            # rotate 90° CCW
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+            cv2.imshow("Pi Camera", frame)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+pipe.terminate()
+cv2.destroyAllWindows()

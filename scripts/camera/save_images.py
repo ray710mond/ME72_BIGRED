@@ -1,45 +1,45 @@
-#!/usr/bin/env python3
 import cv2
-import time
 import os
+from datetime import datetime
+import time
 
-# Directory to save images
-save_dir = "/home/bigred/captured_images"  # update path if needed
-os.makedirs(save_dir, exist_ok=True)
+# Folder to save images
+SAVE_FOLDER = "captured_images"
+os.makedirs(SAVE_FOLDER, exist_ok=True)
 
-# Open camera
-cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+# Duration to capture images (seconds)
+CAPTURE_DURATION = 5
 
-if not cap.isOpened():
-    print("Error: Cannot open camera")
-    exit()
+# Open the Pi Camera (device 0)
+cap = cv2.VideoCapture(0)
 
-# Force MJPEG, 640x480, 30 FPS
-cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+# Set resolution
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 cap.set(cv2.CAP_PROP_FPS, 30)
 
-try:
-    for i in range(5):  # capture 5 images
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to grab frame")
-            continue  # try next frame
+if not cap.isOpened():
+    print("Error: Could not open camera.")
+    exit(1)
 
-        # Optional: show the frame in a small window (can comment out)
-        cv2.imshow("Preview", frame)
-        cv2.waitKey(1)  # required to render window
+print(f"Capturing images for {CAPTURE_DURATION} seconds...")
 
-        # Save frame as image
-        file_path = os.path.join(save_dir, f"image_{i+1:03d}.jpg")
-        cv2.imwrite(file_path, frame)
-        print(f"Saved {file_path}")
+start_time = time.time()
+frame_count = 0
 
-        time.sleep(1)  # wait 1 second between captures
+while time.time() - start_time < CAPTURE_DURATION:
+    ret, frame = cap.read()
+    if not ret:
+        continue
 
-finally:
-    cap.release()
-    cv2.destroyAllWindows()
-    print("Camera released")
-    
+    # Rotate 90° counterclockwise
+    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+    # Save frame with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filename = os.path.join(SAVE_FOLDER, f"image_{timestamp}.png")
+    cv2.imwrite(filename, frame)
+    frame_count += 1
+
+cap.release()
+print(f"Finished! Saved {frame_count} images to '{SAVE_FOLDER}'")
