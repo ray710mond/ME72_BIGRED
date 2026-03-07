@@ -46,13 +46,15 @@ THROTTLE_CHNL = 2
 STEER_CHNL    = 4
 INTAKE_CHNL   = 5
 OUTTAKE_CHNL  = 6
-AUTO_CHNL     = 8
+AUTO_CHNL     = 7
+ESTOP_CHNL    =    8
 
 THROTTLE_IDX = THROTTLE_CHNL - 1
 STEER_IDX    = STEER_CHNL - 1
 INTAKE_IDX   = INTAKE_CHNL - 1
 OUTTAKE_IDX  = OUTTAKE_CHNL - 1
 AUTO_IDX     = AUTO_CHNL - 1
+ESTOP_IDX    = ESTOP_CHNL - 1
 
 # iBUS typical value range is ~1000..2000, center ~1500
 PULSE_MIN_US    = 1000.0
@@ -262,6 +264,7 @@ class RfDriverIbusNode(Node):
         self.outtake_pub = self.create_publisher(Bool, "outtake_open", 10)
         self.cmd_pub = self.create_publisher(Twist, "cmd_vel_des", 10)
         self.autonomous_active = self.create_publisher(Bool, "autonomous_active", 10)
+        self.estop_active = self.create_publisher(Bool, "estop_active", 10)
 
         self.ibus = IBusReader(IBUS_PORT, IBUS_BAUD, timeout=0.02)
 
@@ -282,6 +285,8 @@ class RfDriverIbusNode(Node):
         msg.data = False
         self.intake_pub.publish(msg)
         self.outtake_pub.publish(msg)
+        self.autonomous_active.publish(msg)
+        self.estop_active.publish(msg)
 
     def _tick(self):
         chans = self.ibus.read_channels()
@@ -303,6 +308,7 @@ class RfDriverIbusNode(Node):
             return
 
         pulses = [float(v) for v in chans]
+        pulses = [1500.0 if p > 2000 else p for p in pulses]
 
         def safe_get(idx: int) -> float | None:
             return pulses[idx] if 0 <= idx < len(pulses) else None
@@ -312,6 +318,7 @@ class RfDriverIbusNode(Node):
         intake_pw   = safe_get(INTAKE_IDX)
         outtake_pw  = safe_get(OUTTAKE_IDX)
         autonomous_pw = safe_get(AUTO_IDX)  # next channel after outtake
+        estop_pw = safe_get(ESTOP_IDX)
 
         throttle = pulse_to_norm(throttle_pw) * THROTTLE_GAIN
         steer    = pulse_to_norm(steer_pw) * STEER_GAIN
@@ -337,6 +344,10 @@ class RfDriverIbusNode(Node):
         msg = Bool()
         msg.data = bool((autonomous_pw or PULSE_CENTER_US) > PULSE_CENTER_US)
         self.autonomous_active.publish(msg)
+
+        msg = Bool()
+        msg.data = bool((estop_pw or PULSE_CENTER_US) > PULSE_CENTER_US)
+        self.estop_active.publish(msg)
 
         # Debug print ALL channels (14), 10 Hz is too spammy — do 2 Hz
         if not hasattr(self, "_last_dump"):
