@@ -8,17 +8,9 @@ def generate_launch_description():
 
 	return LaunchDescription([
 		Node(
-			package='roboclaw_driver',
-			executable='roboclaw_driver',
-			name='roboclaw_driver',
-			namespace=namespace,
-			output='screen',
-		),
-
-		Node(
-			package='roboclaw_driver',
-			executable='encoder_driver',
-			name='encoder_driver',
+			package='imu_driver',
+			executable='imu_driver',
+			name='imu_driver',
 			namespace=namespace,
 			output='screen',
 		),

@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 from glob import glob
 
-package_name = 'roboclaw_driver'
+package_name = 'imu_driver'
 
 otherfiles = [
     ('share/' + package_name + '/launch', glob('launch/*')),
@@ -21,7 +21,7 @@ setup(
     maintainer='raymond',
     maintainer_email='ray710mond@gmail.com',
     description='TODO: Package description',
-    license='BIG RED',
+    license='BIGRED',
     extras_require={
         'test': [
             'pytest',
@@ -29,8 +29,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'roboclaw_driver = roboclaw_driver.roboclaw_driver:main',
-            'encoder_driver = roboclaw_driver.encoder_driver:main',
+            'imu_driver = imu_driver.imu_driver:main',
         ],
     },
 )
