@@ -27,6 +27,7 @@ def launch_setup(context, *args, **kwargs):
 	autonomous_pkg_share = get_package_share_directory('autonomous_planner')
 	imu_pkg_share = get_package_share_directory('imu_driver')
 	roboclaw_pkg_share = get_package_share_directory('roboclaw_driver')
+	hole_detector_pkg_share = get_package_share_directory('hole_detector')
 
 	rf_launch_file = os.path.join(rf_pkg_share, 'launch', 'rf_driver.launch.py')
 	actions.append(
@@ -83,6 +84,16 @@ def launch_setup(context, *args, **kwargs):
 	actions.append(
 		IncludeLaunchDescription(
 			PythonLaunchDescriptionSource(roboclaw_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+			}.items()
+		)
+	)
+
+	hole_detector_launch_file = os.path.join(hole_detector_pkg_share, 'launch', 'hole_detector.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(hole_detector_launch_file),
 			launch_arguments={
 				'namespace': namespace,
 			}.items()
