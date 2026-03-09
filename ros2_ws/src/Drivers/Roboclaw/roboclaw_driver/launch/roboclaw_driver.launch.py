@@ -78,7 +78,7 @@ def launch_setup(context, *args, **kwargs):
 				'encoder_poll_period_sec': 0.05,
 
 				'left_motor_command_sign': 1,
-				'right_motor_command_sign': -1,
+				'right_motor_command_sign': 1,
 			}],
 		)
 	]
