@@ -30,7 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'roboclaw_driver = roboclaw_driver.roboclaw_driver:main',
-            'encoder_driver = roboclaw_driver.encoder_driver:main',
+            'heading_assist = roboclaw_driver.heading_assist:main',
         ],
     },
 )

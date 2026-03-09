@@ -15,7 +15,7 @@ class TimedVelocityAutonomy(Node):
       /autonomous_active (std_msgs/Bool)
 
     Publishes:
-      /cmd_vel_des (geometry_msgs/Twist)
+      /cmd_vel_auto (geometry_msgs/Twist)
 
     Behavior:
       - When /autonomous_active == True:
@@ -59,7 +59,7 @@ class TimedVelocityAutonomy(Node):
             self.get_logger().warn("No valid segments provided; autonomy will publish zero only.")
 
         # ---- ROS I/O ----
-        self.cmd_pub = self.create_publisher(Twist, "/cmd_vel_des", 10)
+        self.cmd_pub = self.create_publisher(Twist, "/cmd_vel_auto", 10)
         self.active_sub = self.create_subscription(Bool, "/autonomous_active", self._on_active, 10)
 
         # Timer for periodic publishing / state machine

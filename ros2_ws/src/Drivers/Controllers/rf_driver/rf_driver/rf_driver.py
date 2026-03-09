@@ -4,7 +4,7 @@ rf_driver_ibus.py
 
 ROS2 node that reads FlySky iBUS from a UART (/dev/ttyAMA0, /dev/ttyS0, etc.)
 and publishes:
-  - Twist on `cmd_vel_des`
+  - Twist on `cmd_vel_teleop`
   - Bool on `intake_running`
   - Bool on `outtake_open`
 
@@ -67,7 +67,8 @@ LOOP_DT = 0.02  # 50 Hz
 
 # Gains (tune for your robot)
 THROTTLE_GAIN = 1.0
-STEER_GAIN    = 0.25
+# STEER_GAIN    = 0.25
+STEER_GAIN    = 1.0
 
 # Failsafe if no fresh frames within this time
 STALE_S = 0.25
@@ -262,7 +263,7 @@ class RfDriverIbusNode(Node):
 
         self.intake_pub = self.create_publisher(Bool, "intake_running", 10)
         self.outtake_pub = self.create_publisher(Bool, "outtake_open", 10)
-        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_des", 10)
+        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_teleop", 10)
         self.autonomous_active = self.create_publisher(Bool, "autonomous_active", 10)
         self.estop_active = self.create_publisher(Bool, "estop_active", 10)
 

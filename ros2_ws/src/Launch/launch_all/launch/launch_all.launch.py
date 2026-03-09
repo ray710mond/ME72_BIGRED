@@ -1,51 +1,117 @@
 from launch import LaunchDescription
-from launch.actions import LogInfo
+from launch.actions import LogInfo, IncludeLaunchDescription, DeclareLaunchArgument, OpaqueFunction
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-import os
-import yaml
 from ament_index_python.packages import get_package_share_directory
+import os
+
+
+def launch_setup(context, *args, **kwargs):
+	namespace = os.uname().nodename
+
+	pkg_share = get_package_share_directory('launch_all')
+	twist_mux_cfg_file = os.path.join(pkg_share, 'config', 'twist_mux.yaml')
+
+	spark_driver_type = LaunchConfiguration('spark_driver_type').perform(context)
+
+	actions = []
+
+	actions.append(LogInfo(msg=f'launch_all: namespace={namespace}'))
+	actions.append(LogInfo(msg=f'launch_all: spark_driver.driver_type={spark_driver_type}'))
+	actions.append(LogInfo(msg=f'launch_all: twist_mux config={twist_mux_cfg_file}'))
+
+	rf_pkg_share = get_package_share_directory('rf_driver')
+	spark_pkg_share = get_package_share_directory('spark_driver')
+	servo_pkg_share = get_package_share_directory('servo_driver')
+	autonomous_pkg_share = get_package_share_directory('autonomous_planner')
+	imu_pkg_share = get_package_share_directory('imu_driver')
+	roboclaw_pkg_share = get_package_share_directory('roboclaw_driver')
+
+	rf_launch_file = os.path.join(rf_pkg_share, 'launch', 'rf_driver.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(rf_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+			}.items()
+		)
+	)
+
+	# servo_launch_file = os.path.join(servo_pkg_share, 'launch', 'servo_driver.launch.py')
+	# actions.append(
+	# 	IncludeLaunchDescription(
+	# 		PythonLaunchDescriptionSource(servo_launch_file),
+	# 		launch_arguments={
+	# 			'namespace': namespace,
+	# 		}.items()
+	# 	)
+	# )
+
+	spark_launch_file = os.path.join(spark_pkg_share, 'launch', 'spark_driver.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(spark_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+				'driver_type': spark_driver_type,
+			}.items()
+		)
+	)
+
+	autonomous_launch_file = os.path.join(autonomous_pkg_share, 'launch', 'autonomous_planner.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(autonomous_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+			}.items()
+		)
+	)
+
+	imu_launch_file = os.path.join(imu_pkg_share, 'launch', 'imu_driver.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(imu_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+			}.items()
+		)
+	)
+
+	roboclaw_launch_file = os.path.join(roboclaw_pkg_share, 'launch', 'roboclaw_driver.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(roboclaw_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+			}.items()
+		)
+	)
+
+	actions.append(
+		Node(
+			package='twist_mux',
+			executable='twist_mux',
+			name='twist_mux',
+			namespace=namespace,
+			parameters=[twist_mux_cfg_file],
+			remappings=[
+				('cmd_vel_out', 'cmd_vel_des'),
+			],
+			output='screen',
+		)
+	)
+
+	return actions
 
 
 def generate_launch_description():
-    namespace = os.uname().nodename
-    # locate config
-    pkg_share = get_package_share_directory('launch_all')
-    cfg_file = os.path.join(pkg_share, 'config', 'params.yaml')
-
-    try:
-        with open(cfg_file, 'r') as f:
-            params = yaml.safe_load(f) or {}
-    except Exception:
-        params = {}
-
-    rf_params = params.get('rf_driver', {})
-    driver_type = str(rf_params.get('driver_type', 'pwm'))
-    chip_name = str(rf_params.get('chip_name', 'gpiochip4'))
-
-    ld = LaunchDescription()
-    ld.add_action(LogInfo(msg=f'launch_all: using config {cfg_file}'))
-    ld.add_action(LogInfo(msg=f'launch_all: rf_driver.driver_type={driver_type}, chip_name={chip_name}'))
-
-    if driver_type == 'pwm':
-        node = Node(
-            package='rf_driver',
-            executable='rf_driver_pwm',
-            name='rf_driver_pwm',
-            namespace=namespace,
-            output='screen',
-            parameters=[{'chip_name': chip_name}],
-        )
-        ld.add_action(node)
-    elif driver_type == 'ibus':
-        node = Node(
-            package='rf_driver',
-            executable='rf_driver_ibus',
-            name='rf_driver_ibus',
-            namespace=namespace,
-            output='screen',
-        )
-        ld.add_action(node)
-    else:
-        ld.add_action(LogInfo(msg=f'launch_all: unknown rf_driver.driver_type="{driver_type}"; nothing launched'))
-
-    return ld
+	return LaunchDescription([
+		DeclareLaunchArgument(
+			'spark_driver_type',
+			default_value='sw',
+			description='Spark driver type (sw or hw)'
+		),
+		OpaqueFunction(function=launch_setup),
+	])

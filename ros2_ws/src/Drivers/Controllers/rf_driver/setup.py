@@ -29,8 +29,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'rf_driver_ibus = rf_driver.rf_driver_ibus:main',
-            'rf_driver_pwm = rf_driver.rf_driver_pwm:main',
+            'rf_driver = rf_driver.rf_driver:main',
         ],
     },
 )

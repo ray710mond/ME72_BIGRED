@@ -16,9 +16,9 @@ def generate_launch_description():
 	return LaunchDescription([
 		namespace_arg,
 		Node(
-			package='imu_driver',
-			executable='imu_driver',
-			name='imu_driver',
+			package='rf_driver',
+			executable='rf_driver',
+			name='rf_driver',
 			namespace=namespace,
 			output='screen',
 		),
