@@ -12,18 +12,21 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Tuning constants
 # ---------------------------------------------------------------------------
-_BRIGHTNESS_THRESHOLDS = [45, 60, 75]  # tried in order; first to produce a valid contour wins
-_MIN_CONTOUR_AREA = 16000
+_BRIGHTNESS_THRESHOLDS = list(range(40, 90, 5))  # [40, 45, 50, ..., 85]
+_MIN_CONTOUR_AREA = 15000
 _MAX_CONTOUR_AREA = 490000
 _MAX_CONTOUR_DIM = 1000
-_MAX_SHADOW_BRIGHTNESS = 80     # contours brighter than this are shadows, not void
-_MIN_SOLIDITY = 0.5             # reject very irregular shapes (amorphous shadows)
 _MAX_CONSECUTIVE_FAILURES = 10  # headless mode: terminate after this many frames w/o detection
 
 _FRAME_CHANGE_THRESHOLD = 12.0  # mean diff after heavy blur; shadows < this < robot movement
 _HOLE_MASK_MARGIN = 50          # px to expand hole mask for pre-confirmation stability check
 _MIN_OVERLAP_IOU = 0.3          # minimum bbox IoU to accept a contour frame-to-frame
-_SEARCH_STATUS_INTERVAL = 30    # print "Searching..." every N failed processed frames
+_OVERLAP_GRACE_AFTER = 15       # after this many failures, drop overlap requirement (re-acquire)
+_MAX_BRIGHTNESS_DIFF = 10       # max brightness difference vs confirmed hole
+_MAX_HOLE_BRIGHTNESS = 50       # absolute cap: a real void is never brighter than this
+_MIN_AREA_RATIO = 0.25          # contour area must be >= 25% of confirmed area
+_MAX_AREA_RATIO = 3.0           # contour area must be <= 300% of confirmed area
+_REACQUIRE_CONFIRM = 7          # consecutive frames before accepting after a gap
 
 
 def _can_show_windows() -> bool:
@@ -32,12 +35,29 @@ def _can_show_windows() -> bool:
     return True
 
 
-def _order_corners(pts):
-    """Order 4 points clockwise: top-left, top-right, bottom-right, bottom-left."""
-    sorted_by_y = sorted(pts, key=lambda p: p[1])
-    top = sorted(sorted_by_y[:2], key=lambda p: p[0])
-    bot = sorted(sorted_by_y[2:], key=lambda p: p[0])
-    return [top[0], top[1], bot[1], bot[0]]
+def _order_corners(pts, angle=0.0):
+    """Order 4 corners consistently relative to the rectangle's own axes.
+
+    Returns [BL, TL, TR, BR] where the labels refer to the hole's
+    physical edges (not the image frame).  Counter-rotates the points so
+    the rectangle is upright before sorting, which prevents corner-label
+    flipping at steep angles.
+    """
+    center = np.mean(pts, axis=0)
+    rad = np.radians(-angle)
+    cos_a, sin_a = np.cos(rad), np.sin(rad)
+
+    unrotated = []
+    for pt in pts:
+        dx, dy = pt[0] - center[0], pt[1] - center[1]
+        ux = dx * cos_a - dy * sin_a
+        uy = dx * sin_a + dy * cos_a
+        unrotated.append((ux, uy, pt))
+
+    sorted_by_y = sorted(unrotated, key=lambda r: r[1])
+    top = sorted(sorted_by_y[:2], key=lambda r: r[0])
+    bot = sorted(sorted_by_y[2:], key=lambda r: r[0])
+    return [list(top[0][2]), list(top[1][2]), list(bot[1][2]), list(bot[0][2])]
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +118,8 @@ def _detect_hole_contour(
 ):
     """Core detection pipeline with configurable thresholds.
 
-    Returns (target_contour, thresh_image) -- contour is None when nothing found.
+    Returns (target_contour, thresh_image, mean_brightness).
+    contour and mean_brightness are None when nothing found.
     """
     blur = cv2.GaussianBlur(gray, (7, 7), 0)
     _, thresh = cv2.threshold(blur, brightness_thresh, 255, cv2.THRESH_BINARY_INV)
@@ -107,7 +128,7 @@ def _detect_hole_contour(
 
     mask_width = int(width * left_roi_fraction)
     hinge_x0 = mask_width
-    hinge_x1 = hinge_x0 + int(width * 0.23)
+    hinge_x1 = hinge_x0 + int(width * 0.13)
     hinge_y0 = int(height * 0.45)
     hinge_y1 = hinge_y0 + int(height * 0.3)
     cv2.rectangle(thresh, (0, 0), (mask_width, height), 0, -1)
@@ -119,9 +140,9 @@ def _detect_hole_contour(
 
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        return None, thresh
+        return None, thresh, None
 
-    candidates = []
+    valid_contours = []
     for cnt in contours:
         area = cv2.contourArea(cnt)
         _, _, w, h = cv2.boundingRect(cnt)
@@ -129,33 +150,25 @@ def _detect_hole_contour(
         if area < _MIN_CONTOUR_AREA or area > _MAX_CONTOUR_AREA or w > _MAX_CONTOUR_DIM or h > _MAX_CONTOUR_DIM:
             continue
 
-        hull_area = cv2.contourArea(cv2.convexHull(cnt))
-        solidity = area / hull_area if hull_area > 0 else 0
-        if solidity < _MIN_SOLIDITY:
-            if debug:
-                print(f"    rejected solidity={solidity:.2f}  area={area:.0f}")
-            continue
+        valid_contours.append(cnt)
 
+    if not valid_contours:
+        return None, thresh, None
+
+    # Pick the darkest contour (lowest mean brightness = deepest void)
+    target_contour = None
+    lowest_brightness = 255.0
+    for cnt in valid_contours:
         mask = np.zeros(gray.shape, dtype=np.uint8)
         cv2.drawContours(mask, [cnt], -1, 255, -1)
         mean_brightness = cv2.mean(gray, mask=mask)[0]
-        if mean_brightness > _MAX_SHADOW_BRIGHTNESS:
-            if debug:
-                print(f"    rejected brightness={mean_brightness:.1f}  area={area:.0f}")
-            continue
+        if debug:
+            print(f"    candidate  area={cv2.contourArea(cnt):.0f}  brightness={mean_brightness:.1f}")
+        if mean_brightness < lowest_brightness:
+            lowest_brightness = mean_brightness
+            target_contour = cnt
 
-        candidates.append((cnt, mean_brightness, area, solidity))
-
-    if not candidates:
-        return None, thresh
-
-    candidates.sort(key=lambda c: c[1])
-    if debug:
-        for cnt, bright, area, sol in candidates:
-            tag = " <-- selected" if cnt is candidates[0][0] else ""
-            print(f"    candidate  area={area:.0f}  brightness={bright:.1f}  solidity={sol:.2f}{tag}")
-
-    return candidates[0][0], thresh
+    return target_contour, thresh, lowest_brightness
 
 
 def process_frame(
@@ -177,7 +190,7 @@ def process_frame(
         in order (automatic fallback).
 
     Return dict always contains:
-        coordinates     list of [x, y] (TL, TR, BR, BL) or None
+        coordinates     list of [x, y] (BL, TL, TR, BR) or None
         orange_pixels   int
     On success, also:
         bbox, rotated_rect, fallback_level
@@ -207,7 +220,7 @@ def process_frame(
         roi_display[:, :left_region_limit] = global_orange_mask[:, :left_region_limit]
         cv2.imshow("Orange Pixels (Left ROI)", roi_display)
 
-    if verbose and orange_pixels < 30000:
+    if verbose and (orange_pixels < 30000 or orange_pixels > 40000):
         print("WARNING: Robot outtake not detected! Camera may have shifted.")
 
     # ------------------------------------------------------------------
@@ -228,7 +241,7 @@ def process_frame(
         if debug:
             print(f"  [level {i}] thresh={thresh_val}")
 
-        contour, last_thresh = _detect_hole_contour(
+        contour, last_thresh, contour_brightness = _detect_hole_contour(
             gray, global_orange_mask, width, height, left_roi_fraction,
             thresh_val, debug,
         )
@@ -249,13 +262,23 @@ def process_frame(
 
     # ------------------------------------------------------------------
     # Rotation-aligned bounding rectangle
+    # Convex hull removes concavities from the robot arm inside the hole,
+    # so the fitted rectangle aligns with the hole geometry, not the arm.
     # ------------------------------------------------------------------
-    rect = cv2.minAreaRect(target_contour)
+    hull = cv2.convexHull(target_contour)
+    rect = cv2.minAreaRect(hull)
     box = cv2.boxPoints(rect)
     box = np.intp(box)
     center, (rw, rh), angle = rect
 
-    corners = _order_corners(box.tolist())
+    # Normalize so rw is always the longer side and angle stays in [-90, 90]
+    if rw < rh:
+        rw, rh = rh, rw
+        angle += 90
+    if angle > 90:
+        angle -= 180
+
+    corners = _order_corners(box.tolist(), angle)
     ax, ay, aw, ah = cv2.boundingRect(target_contour)
 
     if debug and show_windows:
@@ -277,6 +300,8 @@ def process_frame(
             "angle": float(angle),
         },
         "fallback_level": used_level,
+        "mean_brightness": contour_brightness,
+        "contour_area": float(cv2.contourArea(target_contour)),
     }
 
 
@@ -302,7 +327,7 @@ def main():
         default=str(Path(__file__).with_name("test.mjpeg")),
         help='Video source: path, URL, or camera index (e.g. "0").',
     )
-    parser.add_argument("--every", type=int, default=5, help="Process every Nth frame.")
+    parser.add_argument("--every", type=int, default=1, help="Process every Nth frame.")
     parser.add_argument(
         "--frame",
         type=int,
@@ -384,90 +409,95 @@ def main():
         # ==============================================================
         # Streaming mode
         # ==============================================================
-        reference_bbox = None   # rolling: updated every accepted frame
+        reference_bbox = None        # rolling: updated every accepted frame
+        reference_brightness = None  # mean brightness of confirmed hole contour
+        reference_area = None        # contour area of confirmed hole
 
         # ----------------------------------------------------------
         # Phase 1  --  Interactive contour confirmation
         # Requires a display window; skipped in headless mode.
         # ----------------------------------------------------------
         if show_windows:
-            # Stability check: read two frames and make sure the scene
-            # isn't actively changing (robot still moving into position).
-            prev_frame = None
-            frame = None
-            for _ in range(2):
-                ok, f = cap.read()
-                if not ok:
-                    raise SystemExit("Error: could not read frames for confirmation.")
-                frame_idx += 1
-                prev_frame = frame
-                frame = f
-
-            if prev_frame is not None:
-                g1 = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
-                g2 = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                if _frame_changed(g2, g1, hole_mask=None):
-                    raise SystemExit(
-                        "Scene is changing -- robot may still be moving. "
-                        "Wait for it to settle and restart."
-                    )
-
-            print("\n=== CONTOUR CONFIRMATION ===")
+            # Live confirmation loop: video streams continuously while the
+            # user watches.  Press 'y' to lock in the current contour,
+            # 'n' to try the next brightness threshold, 'q' to quit.
+            # If the robot moves before the user confirms, the script
+            # cancels (frame-change detection against the first frame).
+            print("\n=== CONTOUR CONFIRMATION (live) ===")
             print("Press  y = confirm    n = next threshold    q = quit\n")
 
             confirmed = False
-            for thresh_val in _BRIGHTNESS_THRESHOLDS:
+            thresh_idx = 0
+            reference_confirm_gray = None
+            last_confirm_result = None
+
+            while not confirmed:
+                ok, frame = cap.read()
+                if not ok:
+                    raise SystemExit("Error: video ended before confirmation.")
+                frame_idx += 1
+
+                cur_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                if reference_confirm_gray is None:
+                    reference_confirm_gray = cur_gray
+                elif _frame_changed(cur_gray, reference_confirm_gray, hole_mask=None):
+                    cv2.destroyAllWindows()
+                    raise SystemExit(
+                        "Robot moved before contour was confirmed. "
+                        "Reposition the robot and restart."
+                    )
+
+                thresh_val = _BRIGHTNESS_THRESHOLDS[thresh_idx]
                 result = process_frame(
                     frame,
                     left_roi_fraction=args.left_roi,
                     display=args.display,
                     debug=args.debug,
-                    verbose=False,
+                    verbose=True,
                     brightness_threshold=thresh_val,
                 )
                 coords = result.get("coordinates") if result else None
-
-                if coords is None:
-                    print(f"  No contour at threshold={thresh_val}, trying next...")
-                    continue
+                last_confirm_result = result if coords is not None else last_confirm_result
 
                 vis = frame.copy()
-                pts = np.array(coords, dtype=np.int32)
-                cv2.polylines(vis, [pts], isClosed=True, color=(0, 255, 0), thickness=3)
-                for pt in coords:
-                    cv2.circle(vis, tuple(pt), 8, (0, 255, 0), -1)
+                if coords is not None:
+                    pts = np.array(coords, dtype=np.int32)
+                    cv2.polylines(vis, [pts], isClosed=True, color=(0, 255, 0), thickness=3)
+                    for pt in coords:
+                        cv2.circle(vis, tuple(pt), 8, (0, 255, 0), -1)
+                    label = f"thresh={thresh_val} | CONTOUR FOUND  [y/n/q]"
+                else:
+                    label = f"thresh={thresh_val} | no contour  [n/q]"
+                cv2.putText(vis, label, (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                 cv2.imshow("Confirm Contour", vis)
 
-                print(f"  Contour found (threshold={thresh_val}). Is this the hole?  [y / n / q]")
-
-                while True:
-                    key = cv2.waitKey(0) & 0xFF
-                    if key in (ord("y"), ord("n"), ord("q")):
-                        break
+                key = cv2.waitKey(30) & 0xFF
 
                 if key == ord("q"):
                     print("User quit during confirmation.")
                     return
 
-                if key == ord("y"):
+                if key == ord("y") and coords is not None:
                     confirmed = True
                     reference_bbox = result["bbox"]
+                    reference_brightness = result.get("mean_brightness")
+                    reference_area = result.get("contour_area")
                     last_coords = coords
                     last_bbox = reference_bbox
-                    print(f"  CONFIRMED  corners={_fmt_corners(coords)}\n")
+                    print(f"  CONFIRMED  brightness={reference_brightness:.1f}  "
+                          f"area={reference_area:.0f}  corners={_fmt_corners(coords)}\n")
                     cv2.destroyWindow("Confirm Contour")
-                    break
 
-                print("  Rejected, trying next threshold...")
-
-            if not confirmed:
-                raise SystemExit(
-                    "REPOSITION ROBOT -- no valid hole confirmed after all thresholds."
-                )
-
-            # Flush stale frames that buffered while the user was deciding
-            for _ in range(30):
-                cap.grab()
+                elif key == ord("n"):
+                    thresh_idx += 1
+                    if thresh_idx >= len(_BRIGHTNESS_THRESHOLDS):
+                        cv2.destroyAllWindows()
+                        raise SystemExit(
+                            "REPOSITION ROBOT -- all thresholds rejected."
+                        )
+                    print(f"  Switched to threshold={_BRIGHTNESS_THRESHOLDS[thresh_idx]}")
 
         # ----------------------------------------------------------
         # Phase 2  --  Tracking loop
@@ -482,6 +512,8 @@ def main():
         # failure limit since there is no reference to re-acquire against.
         # ----------------------------------------------------------
         consecutive_failures = 0
+        pending_bbox = None
+        pending_count = 0
 
         while True:
             ok, frame = cap.read()
@@ -507,34 +539,94 @@ def main():
             coords = result.get("coordinates") if result else None
 
             # --- overlap gate (only when we have a confirmed reference) ---
+            # After a long gap the hole may return at a different position/angle,
+            # so the overlap requirement is dropped to allow re-acquisition.
             if coords is not None and reference_bbox is not None:
-                if not _bboxes_overlap(reference_bbox, result["bbox"]):
+                if consecutive_failures < _OVERLAP_GRACE_AFTER:
+                    if not _bboxes_overlap(reference_bbox, result["bbox"]):
+                        if args.debug:
+                            print(f"  frame={frame_idx}  rejected: no overlap with reference")
+                        coords = None
+
+            # --- shadow rejection gates (brightness + area) ---
+            if coords is not None:
+                new_brightness = result.get("mean_brightness")
+                new_area = result.get("contour_area")
+
+                # Absolute brightness cap: a void is never this bright
+                if new_brightness is not None and new_brightness > _MAX_HOLE_BRIGHTNESS:
                     if args.debug:
-                        print(f"  frame={frame_idx}  rejected: no overlap with reference")
+                        print(f"  frame={frame_idx}  rejected: brightness {new_brightness:.1f} "
+                              f"> absolute cap {_MAX_HOLE_BRIGHTNESS}")
                     coords = None
 
+                # Relative brightness: must be similar to confirmed hole
+                elif reference_brightness is not None and new_brightness is not None:
+                    if abs(new_brightness - reference_brightness) > _MAX_BRIGHTNESS_DIFF:
+                        if args.debug:
+                            print(f"  frame={frame_idx}  rejected: brightness {new_brightness:.1f} "
+                                  f"vs reference {reference_brightness:.1f}")
+                        coords = None
+
+                # Area similarity: reject contours far from confirmed size
+                if coords is not None and reference_area is not None and new_area is not None:
+                    ratio = new_area / reference_area
+                    if ratio < _MIN_AREA_RATIO or ratio > _MAX_AREA_RATIO:
+                        if args.debug:
+                            print(f"  frame={frame_idx}  rejected: area ratio {ratio:.2f} "
+                                  f"(area={new_area:.0f} vs ref={reference_area:.0f})")
+                        coords = None
+
             # --- accept or count failure ---
-            if coords is not None:
-                if consecutive_failures > 0:
-                    print(f"  Re-acquired hole after {consecutive_failures} frames")
+            if coords is not None and consecutive_failures == 0:
+                # Normal tracking: accept immediately
                 last_coords = coords
                 last_bbox = result.get("bbox")
-                reference_bbox = last_bbox  # rolling update
-                consecutive_failures = 0
+                reference_bbox = last_bbox
+                pending_bbox = None
+                pending_count = 0
                 lvl = result.get("fallback_level", 0)
                 lvl_str = f"  [fallback={lvl}]" if lvl > 0 else ""
                 print(f"frame={frame_idx}{lvl_str}  corners={_fmt_corners(coords)}")
+
+            elif coords is not None:
+                # Re-acquiring after a gap: require temporal confirmation
+                # to avoid accepting a 1-2 frame shadow flicker.
+                new_bbox = result["bbox"]
+                if pending_bbox is not None and _bboxes_overlap(pending_bbox, new_bbox):
+                    pending_count += 1
+                    pending_bbox = new_bbox
+                else:
+                    pending_bbox = new_bbox
+                    pending_count = 1
+
+                if pending_count >= _REACQUIRE_CONFIRM:
+                    print(f"  Re-acquired hole after {consecutive_failures} frames")
+                    last_coords = coords
+                    last_bbox = result.get("bbox")
+                    reference_bbox = last_bbox
+                    consecutive_failures = 0
+                    pending_bbox = None
+                    pending_count = 0
+                    lvl = result.get("fallback_level", 0)
+                    lvl_str = f"  [fallback={lvl}]" if lvl > 0 else ""
+                    print(f"frame={frame_idx}{lvl_str}  corners={_fmt_corners(coords)}")
+                else:
+                    print(f"frame={frame_idx}  Confirming contour ({pending_count}/{_REACQUIRE_CONFIRM})...")
+
             else:
+                last_coords = None
+                last_bbox = None
+                pending_bbox = None
+                pending_count = 0
                 consecutive_failures += 1
+                print(f"frame={frame_idx}  No contour detected")
                 if reference_bbox is None and consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
-                    # Headless mode (no confirmation): give up quickly
                     print(
                         f"\nFATAL: No hole detected for {consecutive_failures} "
                         f"consecutive processed frames. Reposition the robot and restart."
                     )
                     break
-                if consecutive_failures % _SEARCH_STATUS_INTERVAL == 0:
-                    print(f"  Searching for hole... ({consecutive_failures} frames)")
 
             if show_windows:
                 _draw_overlay(frame.copy())
@@ -555,5 +647,5 @@ if __name__ == "__main__":
 # python3 scripts/camera/train.py --source scripts/camera/test2.mjpeg --display
 
 
-# TODO Add upper bound for tolderance of box outtake detection
 # TODO Add color detection tolerance for other bot outtake.
+# TODO what outputs should we print for the robot movements? (center and length?)
