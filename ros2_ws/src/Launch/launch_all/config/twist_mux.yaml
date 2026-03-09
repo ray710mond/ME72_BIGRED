@@ -12,8 +12,4 @@
         timeout: 0.5
         priority: 10
 
-    locks:
-      estop:
-        topic: estop
-        timeout: 0.0
-        priority: 255
+    locks: {}
