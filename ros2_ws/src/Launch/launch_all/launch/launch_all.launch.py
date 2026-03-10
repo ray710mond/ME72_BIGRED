@@ -117,8 +117,9 @@ def launch_setup(context, *args, **kwargs):
 	)
 
 	if stream_ip:
+		stream_port = LaunchConfiguration('stream_port').perform(context)
 		stream_script = os.path.join(pkg_share, 'config', 'stream_camera.sh')
-		stream_cmd = ['bash', stream_script, stream_ip, '5000', '1280', '720', '30']
+		stream_cmd = ['bash', stream_script, stream_ip, stream_port, '1280', '720', '30']
 		if not save_recording:
 			stream_cmd.append('--no-save')
 		actions.append(ExecuteProcess(
@@ -127,7 +128,7 @@ def launch_setup(context, *args, **kwargs):
 			name='camera_stream',
 		))
 		actions.append(LogInfo(
-			msg=f'launch_all: camera stream -> {stream_ip}:5000 (save={save_recording})'
+			msg=f'launch_all: camera stream -> {stream_ip}:{stream_port} (save={save_recording})'
 		))
 
 	return actions
@@ -144,6 +145,11 @@ def generate_launch_description():
 			'stream_ip',
 			default_value='',
 			description='IP to stream camera to (empty = no stream)'
+		),
+		DeclareLaunchArgument(
+			'stream_port',
+			default_value='5000',
+			description='UDP port for camera stream'
 		),
 		DeclareLaunchArgument(
 			'save_recording',

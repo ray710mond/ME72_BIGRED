@@ -3,16 +3,17 @@
 View live camera feed from the Pi. Run on Mac/PC while the Pi streams.
 
 Usage:
-  python3 scripts/camera/live_feed.py in local computer terminal
+  python3 live_feed.py                  # default port 5000
+  python3 live_feed.py --port 5001      # custom port
 """
 
+import argparse
 import os
 import platform
 import shutil
 import subprocess
 import sys
 
-PORT = 5000
 UDP_RECV_BUF = 2 * 1024 * 1024
 
 
@@ -44,8 +45,12 @@ def find_ffplay() -> str:
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Live camera viewer")
+    parser.add_argument("--port", type=int, default=5000, help="UDP port (default: 5000)")
+    args = parser.parse_args()
+
     ffplay = find_ffplay()
-    print(f"Listening for MJPEG stream on port {PORT}  (Ctrl+C to stop)")
+    print(f"Listening for MJPEG stream on port {args.port}  (Ctrl+C to stop)")
     try:
         subprocess.run([
             ffplay,
@@ -59,7 +64,7 @@ def main():
             "-sync", "video",
             "-vf", "transpose=2",
             "-f", "mjpeg",
-            f"udp://0.0.0.0:{PORT}?buffer_size={UDP_RECV_BUF}",
+            f"udp://0.0.0.0:{args.port}?buffer_size={UDP_RECV_BUF}",
         ])
     except KeyboardInterrupt:
         print("\nStopped.")
