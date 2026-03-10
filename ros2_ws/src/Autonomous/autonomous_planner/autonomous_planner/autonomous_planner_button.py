@@ -42,8 +42,8 @@ class TimedVelocityAutonomy(Node):
         self.declare_parameter(
             "segments",
             [
-                0.6, 0.02, 0.0, 2.0,   # forward 1.8s, intake off
-                0.2, 0.02, 0.0, 0.5,   # forward 0.3s, intake off
+                0.6, 0.0, 0.0, 1.0,   # forward 1.8s, intake off
+                0.2, 0.0, 0.0, 0.5,   # forward 0.3s, intake off
                 0.0, 0.0, 0.0, 1.0,      # stop (duration ignored since it's last)
             ],
         )
@@ -58,11 +58,11 @@ class TimedVelocityAutonomy(Node):
             self.get_logger().warn("No valid segments provided; autonomy will publish zero only.")
 
         # ---- ROS I/O ----
-        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_auto", 10)
+        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_des", 10)
         self.intake_pub = self.create_publisher(Bool, "intake_running", 10)
 
-        # we watch for teleop input so we can abort the autonomous plan
-        self.sub_teleop = self.create_subscription(Twist, "cmd_vel_teleop", self._on_teleop, 10)
+        # # we watch for teleop input so we can abort the autonomous plan
+        # self.sub_teleop = self.create_subscription(Twist, "cmd_vel_teleop", self._on_teleop, 10)
 
         # Timer for periodic publishing / state machine
         period = 1.0 / max(self.publish_hz, 1e-6)
@@ -73,7 +73,7 @@ class TimedVelocityAutonomy(Node):
         self.seg_idx = 0
         self.seg_start_t = 0.0
 
-        self.declare_parameter("start_delay", 5.0)
+        self.declare_parameter("start_delay", 0.0)
         self.start_delay: float = float(self.get_parameter("start_delay").value)
 
         self.get_logger().info(
@@ -185,22 +185,22 @@ class TimedVelocityAutonomy(Node):
         imsg.data = False
         self.intake_pub.publish(imsg)
 
-    def _on_teleop(self, msg: Twist) -> None:
-        # teleop override received; stop the autonomous plan permanently
-        if not self.running:
-            return
+    # def _on_teleop(self, msg: Twist) -> None:
+    #     # teleop override received; stop the autonomous plan permanently
+    #     # if not self.running:
+    #     #     return
 
-        # ignore zero commands that may be delivered from QoS history when the
-        # teleop node starts or if no input is being sent yet
-        if (
-            abs(msg.linear.x) < 1e-3
-            and abs(msg.linear.y) < 1e-3
-            and abs(msg.angular.z) < 1e-3
-        ):
-            return
+    #     # # ignore zero commands that may be delivered from QoS history when the
+    #     # # teleop node starts or if no input is being sent yet
+    #     # if (
+    #     #     abs(msg.linear.x) < 1e-3
+    #     #     and abs(msg.linear.y) < 1e-3
+    #     #     and abs(msg.angular.z) < 1e-3
+    #     # ):
+    #     #     return
 
-        self.get_logger().info("Teleop received – aborting autonomous plan")
-        self._stop_plan(publish_zero=True)
+    #     # self.get_logger().info("Teleop received – aborting autonomous plan")
+    #     # self._stop_plan(publish_zero=True)
 
 
 def main():
