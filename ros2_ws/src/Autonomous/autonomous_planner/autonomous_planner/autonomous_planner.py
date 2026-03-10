@@ -59,8 +59,8 @@ class TimedVelocityAutonomy(Node):
             self.get_logger().warn("No valid segments provided; autonomy will publish zero only.")
 
         # ---- ROS I/O ----
-        self.cmd_pub = self.create_publisher(Twist, "/cmd_vel_auto", 10)
-        self.active_sub = self.create_subscription(Bool, "/autonomous_active", self._on_active, 10)
+        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_auto", 10)
+        self.active_sub = self.create_subscription(Bool, "autonomous_active", self._on_active, 10)
 
         # Timer for periodic publishing / state machine
         period = 1.0 / max(self.publish_hz, 1e-6)
