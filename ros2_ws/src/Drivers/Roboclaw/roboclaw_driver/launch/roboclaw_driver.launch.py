@@ -11,18 +11,21 @@ def launch_setup(context, *args, **kwargs):
 	if namespace == 'bigred1':
 		use_encoders = True
 		read_encoders = True
+		reverse_steering = False
 		left_trim = 1.0
 		right_trim = 1.0
 		log_msg = 'roboclaw launch: bigred1 open loop, encoders still publishing'
 	elif namespace == 'bigred2':
 		use_encoders = False
 		read_encoders = True
+		reverse_steering = True
 		left_trim = 1.0
 		right_trim = 1.0
 		log_msg = 'roboclaw launch: bigred2 open loop, encoders still publishing'
 	else:
 		use_encoders = False
 		read_encoders = True
+		reverse_steering = False
 		left_trim = 1.0
 		right_trim = 1.0
 		log_msg = 'roboclaw launch: unknown namespace, open loop, encoders still publishing'
@@ -52,6 +55,7 @@ def launch_setup(context, *args, **kwargs):
 
 				'use_encoders': use_encoders,
 				'read_encoders': read_encoders,
+				'reverse_steering': reverse_steering,
 
 				'cmd_timeout_sec': 0.25,
 				'watchdog_period_sec': 0.05,

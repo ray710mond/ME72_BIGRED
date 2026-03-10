@@ -58,6 +58,7 @@ class RoboclawHybridDriver(Node):
 		# Split control-vs-read behavior
 		self.declare_parameter('use_encoders', False)
 		self.declare_parameter('read_encoders', True)
+		self.declare_parameter('reverse_steering', False)
 
 		self.declare_parameter('cmd_timeout_sec', 0.25)
 		self.declare_parameter('watchdog_period_sec', 0.05)
@@ -103,6 +104,7 @@ class RoboclawHybridDriver(Node):
 
 		self.use_encoders = bool(self.get_parameter('use_encoders').value)
 		self.read_encoders = bool(self.get_parameter('read_encoders').value)
+		self.reverse_steering = bool(self.get_parameter('reverse_steering').value)
 
 		self.cmd_timeout_sec = float(self.get_parameter('cmd_timeout_sec').value)
 		watchdog_period_sec = float(self.get_parameter('watchdog_period_sec').value)
@@ -266,7 +268,11 @@ class RoboclawHybridDriver(Node):
 		self.timed_out = False
 
 		v = float(msg.linear.x)
-		w = -float(msg.angular.z)   # flip steering direction
+		# original code always inverted the angular command; use the
+		# reverse_steering flag to control when we flip the direction.
+		w = float(msg.angular.z)
+		if self.reverse_steering:
+			w = -w
 
 		v_left, v_right = self._twist_to_wheel_linear(v, w)
 		w_left = self._wheel_linear_to_rad_s(v_left)
