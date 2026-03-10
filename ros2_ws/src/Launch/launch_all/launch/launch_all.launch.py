@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import LogInfo, IncludeLaunchDescription, DeclareLaunchArgument, OpaqueFunction
+from launch.actions import LogInfo, IncludeLaunchDescription, DeclareLaunchArgument, OpaqueFunction, ExecuteProcess
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -14,6 +14,8 @@ def launch_setup(context, *args, **kwargs):
 	twist_mux_cfg_file = os.path.join(pkg_share, 'config', 'twist_mux.yaml')
 
 	spark_driver_type = LaunchConfiguration('spark_driver_type').perform(context)
+	stream_ip = LaunchConfiguration('stream_ip').perform(context)
+	save_recording = LaunchConfiguration('save_recording').perform(context).lower() == 'true'
 
 	actions = []
 
@@ -114,6 +116,20 @@ def launch_setup(context, *args, **kwargs):
 		)
 	)
 
+	if stream_ip:
+		stream_script = os.path.join(pkg_share, 'config', 'stream_camera.sh')
+		stream_cmd = ['bash', stream_script, stream_ip, '5000', '1280', '720', '30']
+		if not save_recording:
+			stream_cmd.append('--no-save')
+		actions.append(ExecuteProcess(
+			cmd=stream_cmd,
+			output='screen',
+			name='camera_stream',
+		))
+		actions.append(LogInfo(
+			msg=f'launch_all: camera stream -> {stream_ip}:5000 (save={save_recording})'
+		))
+
 	return actions
 
 
@@ -123,6 +139,16 @@ def generate_launch_description():
 			'spark_driver_type',
 			default_value='sw',
 			description='Spark driver type (sw or hw)'
+		),
+		DeclareLaunchArgument(
+			'stream_ip',
+			default_value='',
+			description='IP to stream camera to (empty = no stream)'
+		),
+		DeclareLaunchArgument(
+			'save_recording',
+			default_value='true',
+			description='Save camera recording on Pi (true/false)'
 		),
 		OpaqueFunction(function=launch_setup),
 	])
