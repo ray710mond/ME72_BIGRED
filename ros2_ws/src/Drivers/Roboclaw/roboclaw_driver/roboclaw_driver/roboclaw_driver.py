@@ -271,7 +271,7 @@ class RoboclawHybridDriver(Node):
 		# original code always inverted the angular command; use the
 		# reverse_steering flag to control when we flip the direction.
 		w = float(msg.angular.z)
-		if self.reverse_steering:
+		if not self.reverse_steering:
 			w = -w
 
 		v_left, v_right = self._twist_to_wheel_linear(v, w)
