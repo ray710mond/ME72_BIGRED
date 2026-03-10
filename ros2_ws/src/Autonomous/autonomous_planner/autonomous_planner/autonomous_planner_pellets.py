@@ -61,7 +61,7 @@ class TimedVelocityAutonomy(Node):
             self.get_logger().warn("No valid segments provided; autonomy will publish zero only.")
 
         # ---- ROS I/O ----
-        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_auto", 10)
+        self.cmd_pub = self.create_publisher(Twist, "cmd_vel_des", 10)
         self.intake_pub = self.create_publisher(Bool, "intake_running", 10)
 
         # we watch for teleop input so we can abort the autonomous plan

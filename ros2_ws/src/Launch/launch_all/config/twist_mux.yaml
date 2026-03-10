@@ -8,7 +8,7 @@
         timeout: 0.5
         priority: 100
       auto:
-        topic: cmd_vel_auto
+        topic: cmd_vel_auto_filtered
         timeout: 0.5
         priority: 10
 
