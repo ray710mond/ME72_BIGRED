@@ -18,7 +18,7 @@ def launch_setup(context, *args, **kwargs):
 		use_encoders = False
 		read_encoders = True
 		left_trim = 1.0
-		right_trim = 0.93
+		right_trim = 1.0
 		log_msg = 'roboclaw launch: bigred2 open loop, encoders still publishing'
 	else:
 		use_encoders = False
