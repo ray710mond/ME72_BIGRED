@@ -73,7 +73,7 @@ class TimedVelocityAutonomy(Node):
         self.seg_idx = 0
         self.seg_start_t = 0.0
 
-        self.declare_parameter("start_delay", 0.0)
+        self.declare_parameter("start_delay", 5.0)
         self.start_delay: float = float(self.get_parameter("start_delay").value)
 
         self.get_logger().info(
@@ -187,9 +187,20 @@ class TimedVelocityAutonomy(Node):
 
     def _on_teleop(self, msg: Twist) -> None:
         # teleop override received; stop the autonomous plan permanently
-        if self.running:
-            self.get_logger().info("Teleop received – aborting autonomous plan")
-            self._stop_plan(publish_zero=True)
+        if not self.running:
+            return
+
+        # ignore zero commands that may be delivered from QoS history when the
+        # teleop node starts or if no input is being sent yet
+        if (
+            abs(msg.linear.x) < 1e-3
+            and abs(msg.linear.y) < 1e-3
+            and abs(msg.angular.z) < 1e-3
+        ):
+            return
+
+        self.get_logger().info("Teleop received – aborting autonomous plan")
+        self._stop_plan(publish_zero=True)
 
 
 def main():

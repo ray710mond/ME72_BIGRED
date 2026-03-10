@@ -10,7 +10,8 @@ and publishes:
 
 Behavior:
 	- Does NOT publish on `cmd_vel_teleop` until the first valid iBUS frame is received.
-	- After the first valid frame, if iBUS goes stale, it publishes zero commands as a failsafe.
+	- If iBUS goes stale, it does NOT publish on `cmd_vel_teleop`.
+	- Auxiliary bool topics are also not updated from stale data.
 
 Key robustness improvements:
 	- Serial opened with flow control disabled explicitly.
@@ -30,9 +31,6 @@ from geometry_msgs.msg import Twist
 
 # ----------------- USER SETTINGS -----------------
 
-# Pick the port you are actually wired to:
-#	- /dev/ttyAMA0 (preferred hardware UART when BT disabled)
-#	- /dev/ttyS0   (miniUART)
 IBUS_PORT = "/dev/ttyAMA0"
 IBUS_BAUD = 115200
 
@@ -58,9 +56,9 @@ PULSE_MAX_US = 2000.0
 DEADBAND_US = 40.0
 
 # Control loop
-LOOP_DT = 0.02	# 50 Hz
+LOOP_DT = 0.02  # 50 Hz
 
-# Gains (tune for your robot)
+# Gains
 THROTTLE_GAIN = 1.0
 STEER_GAIN = 1.0
 
@@ -77,7 +75,7 @@ def pulse_to_norm(
 	max_us: float = PULSE_MAX_US,
 	deadband_us: float = DEADBAND_US
 ) -> float:
-	"""Map RC pulse (μs-like) to -1..+1 with deadband."""
+	"""Map RC pulse to -1..+1 with deadband."""
 	if pulse_us is None:
 		return 0.0
 
@@ -152,7 +150,7 @@ class IBusReader:
 
 	@staticmethod
 	def _parse_channels(frame: bytes) -> list[int]:
-		ch: list[int] = []
+		ch = []
 		for i in range(IBusReader.N_CHANNELS):
 			lo = frame[2 + 2 * i]
 			hi = frame[2 + 2 * i + 1]
@@ -160,15 +158,12 @@ class IBusReader:
 		return ch
 
 	def _find_frame(self, buf: bytearray) -> bytes | None:
-		"""
-		Try to find and pop one full 32-byte frame from buf.
-		Returns frame bytes or None.
-		"""
 		for start in range(len(buf)):
 			if buf[start] != self.FRAME_START_LEN:
 				continue
 			if start + self.FRAME_LEN > len(buf):
 				return None
+
 			candidate = bytes(buf[start:start + self.FRAME_LEN])
 
 			if candidate[1] != self.FRAME_CMD:
@@ -252,55 +247,59 @@ class RfDriverIbusNode(Node):
 		self.ibus = IBusReader(IBUS_PORT, IBUS_BAUD, timeout=0.02)
 
 		self._last_dump = 0.0
-		self._last_fc_logged = -1
+		self._last_stale_warn = 0.0
 
-		# New: do not publish teleop until first valid frame arrives
 		self._seen_first_frame = False
 		self._waiting_logged = False
 
 		self._timer = self.create_timer(LOOP_DT, self._tick)
 		self.get_logger().info(f"Started iBUS on {IBUS_PORT} @ {IBUS_BAUD}")
 
-	def _publish_zero(self):
-		twist = Twist()
-		twist.linear.x = 0.0
-		twist.linear.y = 0.0
-		twist.angular.z = 0.0
-		self.cmd_pub.publish(twist)
+	def _publish_aux(self, intake: bool, outtake: bool, autonomous: bool, dock: bool):
+		msg = Bool()
+		msg.data = intake
+		self.intake_pub.publish(msg)
 
 		msg = Bool()
-		msg.data = False
-		self.intake_pub.publish(msg)
+		msg.data = outtake
 		self.outtake_pub.publish(msg)
+
+		msg = Bool()
+		msg.data = autonomous
 		self.autonomous_active.publish(msg)
+
+		msg = Bool()
+		msg.data = dock
 		self.dock_active.publish(msg)
 
 	def _tick(self):
 		chans = self.ibus.read_channels()
 		age = self.ibus.age_s()
-		fc = self.ibus.get_frame_count()
 
 		if chans is not None:
 			self._seen_first_frame = True
 			self._waiting_logged = False
 
-		# Before first valid frame: publish nothing on cmd_vel_teleop
+		# Do not publish anything until the first valid frame arrives
 		if not self._seen_first_frame:
 			if not self._waiting_logged:
 				self.get_logger().info("Waiting for first valid iBUS frame...")
 				self._waiting_logged = True
 			return
 
-		# After startup: if frames go stale, actively zero outputs
-		if age is not None and age > STALE_S:
-			self._publish_zero()
-			self.get_logger().warn(f"iBUS stale ({age:.2f}s) -> zero commands")
+		# If frames are stale, do NOT publish cmd_vel_teleop
+		if age is None or age > STALE_S:
+			now = time.monotonic()
+			if now - self._last_stale_warn > 1.0:
+				if age is None:
+					self.get_logger().warn("iBUS missing after initialization -> not publishing cmd_vel_teleop")
+				else:
+					self.get_logger().warn(f"iBUS stale ({age:.2f}s) -> not publishing cmd_vel_teleop")
+				self._last_stale_warn = now
 			return
 
 		# Extra safety
 		if chans is None:
-			self._publish_zero()
-			self.get_logger().warn("iBUS missing after initialization -> zero commands")
 			return
 
 		pulses = [float(v) for v in chans]
@@ -325,26 +324,17 @@ class RfDriverIbusNode(Node):
 		twist.angular.z = float(steer)
 		self.cmd_pub.publish(twist)
 
-		msg = Bool()
-		msg.data = bool((intake_pw or PULSE_CENTER_US) > PULSE_CENTER_US)
-		self.intake_pub.publish(msg)
-
-		msg = Bool()
-		msg.data = bool((outtake_pw or PULSE_CENTER_US) > PULSE_CENTER_US)
-		self.outtake_pub.publish(msg)
-
-		msg = Bool()
-		msg.data = bool((autonomous_pw or PULSE_CENTER_US) > PULSE_CENTER_US)
-		self.autonomous_active.publish(msg)
-
-		msg = Bool()
-		msg.data = bool((dock_pw or PULSE_CENTER_US) > PULSE_CENTER_US)
-		self.dock_active.publish(msg)
+		self._publish_aux(
+			intake=bool((intake_pw or PULSE_CENTER_US) > PULSE_CENTER_US),
+			outtake=bool((outtake_pw or PULSE_CENTER_US) > PULSE_CENTER_US),
+			autonomous=bool((autonomous_pw or PULSE_CENTER_US) > PULSE_CENTER_US),
+			dock=bool((dock_pw or PULSE_CENTER_US) > PULSE_CENTER_US),
+		)
 
 		now = time.monotonic()
 		if now - self._last_dump > 0.5:
 			self._last_dump = now
-			parts = [f"CH{i+1}={int(pulses[i])}" for i in range(min(14, len(pulses)))]
+			parts = [f"CH{i+1}={int(pulses[i])}" for i in range(min(10, len(pulses)))]
 			self.get_logger().info(" ".join(parts))
 
 	def destroy_node(self):

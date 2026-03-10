@@ -196,9 +196,22 @@ class TimedVelocityAutonomy(Node):
 
     def _on_teleop(self, msg: Twist) -> None:
         # teleop override received; stop the autonomous plan permanently
-        if self.running:
-            self.get_logger().info("Teleop received – aborting autonomous plan")
-            self._stop_plan(publish_zero=True)
+        # Ignore messages that are essentially zero, which can occur when the
+        # teleop publisher has an old value in its history or is just starting
+        # up.  Only non‑zero commands should interrupt an active plan.
+        if not self.running:
+            return
+
+        # check for motion; we ignore tiny values to avoid float noise
+        if (
+            abs(msg.linear.x) < 1e-3
+            and abs(msg.linear.y) < 1e-3
+            and abs(msg.angular.z) < 1e-3
+        ):
+            return
+
+        self.get_logger().info("Teleop received – aborting autonomous plan")
+        self._stop_plan(publish_zero=True)
 
 
 def main():
