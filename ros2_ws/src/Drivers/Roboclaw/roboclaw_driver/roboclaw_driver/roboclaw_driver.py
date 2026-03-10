@@ -75,7 +75,7 @@ class RoboclawHybridDriver(Node):
 
 		# Motor command signs
 		self.declare_parameter('left_motor_command_sign', 1)
-		self.declare_parameter('right_motor_command_sign', -1)
+		self.declare_parameter('right_motor_command_sign', 1)
 
 		# Wheel names
 		self.declare_parameter('left_joint_name', 'left_wheel_joint')
