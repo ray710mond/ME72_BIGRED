@@ -12,14 +12,14 @@ def generate_launch_description():
 	)
 
 	namespace = LaunchConfiguration('namespace')
-
-	return LaunchDescription([
-		namespace_arg,
-		Node(
-			package='imu_driver',
-			executable='imu_driver',
-			name='imu_driver',
-			namespace=namespace,
-			output='screen',
-		),
-	])
+	if namespace == 'bigred1'
+		return LaunchDescription([
+			namespace_arg,
+			Node(
+				package='imu_driver',
+				executable='imu_driver',
+				name='imu_driver',
+				namespace=namespace,
+				output='screen',
+			),
+		])
