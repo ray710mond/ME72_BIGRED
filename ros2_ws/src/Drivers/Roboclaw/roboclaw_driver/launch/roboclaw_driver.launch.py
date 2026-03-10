@@ -64,7 +64,7 @@ def launch_setup(context, *args, **kwargs):
 				'track_width_m': 0.33,
 
 				'encoder_counts_per_motor_rev': 8192.0,
-				'gear_ratio': 6.875,
+				'gear_ratio': 8.0,
 
 				'left_encoder_sign': 1,
 				'right_encoder_sign': 1,
@@ -80,7 +80,7 @@ def launch_setup(context, *args, **kwargs):
 				'max_duty_scale': 1.0,
 
 				'linear_gain_to_wheel_cmd': 1.0,
-				'angular_gain_to_wheel_cmd': 1.0,
+				'angular_gain_to_wheel_cmd': 1.4,
 
 				'encoder_poll_period_sec': 0.05,
 
