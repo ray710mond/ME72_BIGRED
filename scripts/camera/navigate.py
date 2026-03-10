@@ -365,6 +365,9 @@ def main():
                              "Replaces stream_camera.sh.")
     parser.add_argument("--skip-confirm", action="store_true",
                         help="Skip interactive confirmation, go straight to navigation.")
+    parser.add_argument("--no-motion-check", action="store_true",
+                        help="Disable motion detection during confirmation (use if Pi camera "
+                             "auto-exposure keeps triggering false positives).")
     parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270],
                         help="Rotate each frame CW by this many degrees before processing "
                              "(use if camera is mounted sideways). live_feed.py transpose=2 "
@@ -416,18 +419,22 @@ def main():
             confirmed = False
             thresh_idx = 0
             reference_confirm_gray = None
+            _SETTLE_FRAMES = 60  # let auto-exposure stabilize before checking motion (~2s @ 30fps)
+            frames_seen = 0
 
             for frame in frames:
+                frames_seen += 1
                 frame_idx += 1
 
                 cur_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                if reference_confirm_gray is None:
-                    reference_confirm_gray = cur_gray
-                elif _frame_changed(cur_gray, reference_confirm_gray, hole_mask=None):
-                    raise SystemExit(
-                        "Robot moved before contour was confirmed. "
-                        "Reposition the robot and restart."
-                    )
+                if not args.no_motion_check:
+                    if frame_idx <= _SETTLE_FRAMES:
+                        reference_confirm_gray = cur_gray
+                    elif _frame_changed(cur_gray, reference_confirm_gray, hole_mask=None):
+                        raise SystemExit(
+                            "Robot moved before contour was confirmed. "
+                            "Reposition the robot and restart."
+                        )
 
                 thresh_val = _BRIGHTNESS_THRESHOLDS[thresh_idx]
                 result = process_frame(
@@ -475,7 +482,18 @@ def main():
                     print(f"  Switched to threshold={_BRIGHTNESS_THRESHOLDS[thresh_idx]}")
 
             if not confirmed:
-                raise SystemExit("Video ended before confirmation.")
+                if frames_seen == 0:
+                    raise SystemExit(
+                        "No frames received. rpicam-vid likely failed to start.\n"
+                        "  (Run this on the Pi, not the Mac. rpicam-vid is Pi-only.)\n"
+                        "  Try: rpicam-vid -n -t 5 -o test.mjpeg   (run alone to see errors)\n"
+                        "  If 'device busy': stop launch_all stream first."
+                    )
+                raise SystemExit(
+                    "Video ended before confirmation.\n"
+                    "  - Is rpicam-vid still running? (run without 2>/dev/null to see errors)\n"
+                    "  - Is the camera in use by another process? (stop launch_all stream first)"
+                )
 
         # ==============================================================
         # Phase 2  --  Tracking + Navigation
