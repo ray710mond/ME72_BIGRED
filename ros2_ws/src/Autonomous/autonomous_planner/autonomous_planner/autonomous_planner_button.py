@@ -42,8 +42,7 @@ class TimedVelocityAutonomy(Node):
         self.declare_parameter(
             "segments",
             [
-                0.6, 0.0, 0.0, 1.0,   # forward 1.8s, intake off
-                0.2, 0.0, 0.0, 0.5,   # forward 0.3s, intake off
+                0.1, 0.0, 0.0, 20.0,   # forward 20s, intake off
                 0.0, 0.0, 0.0, 1.0,      # stop (duration ignored since it's last)
             ],
         )

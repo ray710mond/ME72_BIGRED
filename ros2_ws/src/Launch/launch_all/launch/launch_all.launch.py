@@ -92,15 +92,15 @@ def launch_setup(context, *args, **kwargs):
 		)
 	)
 
-	# autonomous_launch_file = os.path.join(autonomous_pkg_share, 'launch', 'autonomous_planner.launch.py')
-	# actions.append(
-	# 	IncludeLaunchDescription(
-	# 		PythonLaunchDescriptionSource(autonomous_launch_file),
-	# 		launch_arguments={
-	# 			'namespace': namespace,
-	# 		}.items()
-	# 	)
-	# )
+	autonomous_launch_file = os.path.join(autonomous_pkg_share, 'launch', 'autonomous_planner.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(autonomous_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+			}.items()
+		)
+	)
 
 	actions.append(
 		Node(

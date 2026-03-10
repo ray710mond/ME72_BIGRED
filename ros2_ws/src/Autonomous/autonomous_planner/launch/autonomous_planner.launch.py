@@ -10,7 +10,7 @@ def launch_setup(context, *args, **kwargs):
 	start_delay = float(LaunchConfiguration('start_delay').perform(context))
 
 	if namespace == 'bigred1':
-		exec_name = 'autonomous_planner_pellets'
+		# exec_name = 'autonomous_planner_pellets'
 	elif namespace == 'bigred2':
 		exec_name = 'autonomous_planner_button'
 	else:
