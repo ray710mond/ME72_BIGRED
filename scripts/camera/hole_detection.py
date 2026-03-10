@@ -642,9 +642,9 @@ if __name__ == "__main__":
     main()
 
 # python3 scripts/camera/hole_detection.py --source scripts/camera/test.mjpeg --frame 815 --display
-# python3 scripts/camera/train.py --display
-# Live Script: python3 scripts/camera/train.py --source 0 --display
-# python3 scripts/camera/train.py --source scripts/camera/test2.mjpeg --display
+# python3 scripts/camera/hole_detection.py --display
+# Live Script: python3 scripts/camera/hole_detection.py --source 0 --display
+# python3 scripts/camera/hole_detection.py --source scripts/camera/test2.mjpeg --display
 
 
 # TODO Add color detection tolerance for other bot outtake.
