@@ -31,6 +31,7 @@ from hole_detection import (
     process_frame,
     _can_show_windows,
     _bboxes_overlap,
+    _frame_changed,
     _BRIGHTNESS_THRESHOLDS,
     _MIN_OVERLAP_IOU,
     _OVERLAP_GRACE_AFTER,
@@ -71,7 +72,8 @@ LEFT_ROI = 0.10
 _DEFAULT_TARGET = Path(__file__).with_name("target.json")
 
 # JPEG quality for the UDP stream to the Mac (lower = smaller packets)
-_STREAM_QUALITY = 60
+_STREAM_QUALITY = 50
+_STREAM_SCALE = 0.5       # resize annotated frames before streaming (1.0 = full res)
 _UDP_CHUNK = 32768
 
 
@@ -155,7 +157,10 @@ class UDPStreamer:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def send(self, frame: np.ndarray):
-        """Re-encode a numpy frame as JPEG and send."""
+        """Re-encode a numpy frame as JPEG and send (resized for speed)."""
+        if _STREAM_SCALE != 1.0:
+            h, w = frame.shape[:2]
+            frame = cv2.resize(frame, (int(w * _STREAM_SCALE), int(h * _STREAM_SCALE)))
         _, jpeg = cv2.imencode(
             ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, _STREAM_QUALITY]
         )
@@ -410,9 +415,19 @@ def main():
 
             confirmed = False
             thresh_idx = 0
+            reference_confirm_gray = None
 
             for frame in frames:
                 frame_idx += 1
+
+                cur_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                if reference_confirm_gray is None:
+                    reference_confirm_gray = cur_gray
+                elif _frame_changed(cur_gray, reference_confirm_gray, hole_mask=None):
+                    raise SystemExit(
+                        "Robot moved before contour was confirmed. "
+                        "Reposition the robot and restart."
+                    )
 
                 thresh_val = _BRIGHTNESS_THRESHOLDS[thresh_idx]
                 result = process_frame(
