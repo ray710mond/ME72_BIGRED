@@ -30,8 +30,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'line_following = autonomous_planner.line_following:main',
-            'autonomous_planner = autonomous_planner.autonomous_planner:main',
+            'autonomous_planner_button = autonomous_planner.autonomous_planner_button:main',
+            'autonomous_planner_pellets = autonomous_planner.autonomous_planner_pellets:main',
         ],
     },
 )

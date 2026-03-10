@@ -5,28 +5,19 @@ roboclaw_hybrid_driver.py
 Hybrid RoboClaw ROS 2 driver.
 
 Subscribes:
-  - cmd_vel                     (geometry_msgs/msg/Twist)
+  - cmd_vel_des                 (geometry_msgs/msg/Twist)
 
 Publishes:
-  - cmd_vel_applied            (geometry_msgs/msg/Twist)      filtered/applied command
-  - wheel_states               (sensor_msgs/msg/JointState)   [if read_encoders=True]
-  - encoder/left/count         (std_msgs/msg/Int64)           [if read_encoders=True]
-  - encoder/right/count        (std_msgs/msg/Int64)           [if read_encoders=True]
-  - encoder/left/speed_cps     (std_msgs/msg/Int32)           [if read_encoders=True]
-  - encoder/right/speed_cps    (std_msgs/msg/Int32)           [if read_encoders=True]
-
-Modes:
-  - use_encoders = True:
-      uses RoboClaw signed speed commands in counts/sec
-  - use_encoders = False:
-      uses duty-cycle open loop, with calibration trims
-
-Independent encoder publishing:
-  - read_encoders = True:
-      poll and publish encoder data regardless of control mode
+  - cmd_vel_applied             (geometry_msgs/msg/Twist)
+  - wheel_states                (sensor_msgs/msg/JointState)   [if read_encoders=True]
+  - encoder/left/count          (std_msgs/msg/Int64)           [if read_encoders=True]
+  - encoder/right/count         (std_msgs/msg/Int64)           [if read_encoders=True]
+  - encoder/left/speed_cps      (std_msgs/msg/Int32)           [if read_encoders=True]
+  - encoder/right/speed_cps     (std_msgs/msg/Int32)           [if read_encoders=True]
 
 Important:
-  - Do NOT run a separate encoder node on the same RoboClaw port at the same time.
+  - This node does NOT distinguish teleop vs auto.
+  - Any IMU / encoder-based correction should happen upstream on cmd_vel_auto only.
 """
 
 import math
@@ -50,12 +41,10 @@ class RoboclawHybridDriver(Node):
 	def __init__(self):
 		super().__init__('roboclaw_hybrid_driver')
 
-		# ---------------- Parameters ----------------
 		self.declare_parameter('port', '/dev/ttyACM0')
 		self.declare_parameter('baud', 115200)
 		self.declare_parameter('address', 0x80)
 
-		# Split control-vs-read behavior
 		self.declare_parameter('use_encoders', False)
 		self.declare_parameter('read_encoders', True)
 		self.declare_parameter('reverse_steering', False)
@@ -63,39 +52,31 @@ class RoboclawHybridDriver(Node):
 		self.declare_parameter('cmd_timeout_sec', 0.25)
 		self.declare_parameter('watchdog_period_sec', 0.05)
 
-		# Robot geometry
 		self.declare_parameter('wheel_radius_m', 0.05)
 		self.declare_parameter('track_width_m', 0.30)
 
-		# Encoder parameters
 		self.declare_parameter('encoder_counts_per_motor_rev', 8192.0)
 		self.declare_parameter('gear_ratio', 1.0)
 
 		self.declare_parameter('left_encoder_sign', 1)
 		self.declare_parameter('right_encoder_sign', 1)
 
-		# Motor command signs
 		self.declare_parameter('left_motor_command_sign', 1)
 		self.declare_parameter('right_motor_command_sign', 1)
 
-		# Wheel names
 		self.declare_parameter('left_joint_name', 'left_wheel_joint')
 		self.declare_parameter('right_joint_name', 'right_wheel_joint')
 
-		# Speed mode params
 		self.declare_parameter('max_wheel_speed_rad_s', 25.0)
 		self.declare_parameter('max_accel_cps2', 120000)
 
-		# Duty mode params
 		self.declare_parameter('left_trim', 1.0)
 		self.declare_parameter('right_trim', 1.0)
 		self.declare_parameter('max_duty_scale', 1.0)
 
-		# Mapping for open-loop robot
 		self.declare_parameter('linear_gain_to_wheel_cmd', 1.0)
 		self.declare_parameter('angular_gain_to_wheel_cmd', 1.0)
 
-		# Encoder publish
 		self.declare_parameter('encoder_poll_period_sec', 0.05)
 
 		port = str(self.get_parameter('port').value)
@@ -136,25 +117,19 @@ class RoboclawHybridDriver(Node):
 
 		encoder_poll_period_sec = float(self.get_parameter('encoder_poll_period_sec').value)
 
-		# ---------------- Roboclaw ----------------
 		self.rc = Roboclaw(comport=port, rate=baud)
 		opened = self.rc.Open()
 		if not opened:
 			raise RuntimeError(f'Failed to open RoboClaw on {port}')
 
-		# ---------------- State ----------------
 		self.last_cmd_time = self.get_clock().now()
 		self.timed_out = True
 
-		# ---------------- I/O ----------------
-		self.sub = self.create_subscription(Twist, 'cmd_vel', self._cmd_cb, 20)
-
+		self.sub_cmd = self.create_subscription(Twist, 'cmd_vel_des', self._cmd_cb, 20)
 		self.pub_cmd_vel_applied = self.create_publisher(Twist, 'cmd_vel_applied', 20)
 
 		self.watchdog_timer = self.create_timer(watchdog_period_sec, self._watchdog_cb)
 
-		# Create encoder publishers/timer whenever read_encoders is enabled,
-		# regardless of whether encoder feedback is used for control.
 		if self.read_encoders:
 			self.pub_left_count = self.create_publisher(Int64, 'encoder/left/count', 10)
 			self.pub_right_count = self.create_publisher(Int64, 'encoder/right/count', 10)
@@ -166,14 +141,9 @@ class RoboclawHybridDriver(Node):
 		self.get_logger().info(
 			f'roboclaw_hybrid_driver ready port={port} '
 			f'use_encoders={self.use_encoders} '
-			f'read_encoders={self.read_encoders} '
-			f'left_motor_command_sign={self.left_motor_command_sign} '
-			f'right_motor_command_sign={self.right_motor_command_sign}'
+			f'read_encoders={self.read_encoders}'
 		)
 
-	# ------------------------------------------------------------------
-	# Helpers
-	# ------------------------------------------------------------------
 	def _extract_value(self, result) -> Optional[int]:
 		if result is None:
 			return None
@@ -260,16 +230,11 @@ class RoboclawHybridDriver(Node):
 				self.rc.SpeedM1(self.address, left_cps_cmd)
 				self.rc.SpeedM2(self.address, right_cps_cmd)
 
-	# ------------------------------------------------------------------
-	# Command path
-	# ------------------------------------------------------------------
 	def _cmd_cb(self, msg: Twist):
 		self.last_cmd_time = self.get_clock().now()
 		self.timed_out = False
 
 		v = float(msg.linear.x)
-		# original code always inverted the angular command; use the
-		# reverse_steering flag to control when we flip the direction.
 		w = float(msg.angular.z)
 		if not self.reverse_steering:
 			w = -w
@@ -293,7 +258,6 @@ class RoboclawHybridDriver(Node):
 
 			v_out, w_out = self._wheel_rad_s_to_body_twist(w_left_cmd, w_right_cmd)
 			self._publish_filtered_cmd(v_out, w_out)
-
 		else:
 			left = self.linear_gain_to_wheel_cmd * v + self.angular_gain_to_wheel_cmd * w
 			right = self.linear_gain_to_wheel_cmd * v - self.angular_gain_to_wheel_cmd * w
@@ -333,9 +297,6 @@ class RoboclawHybridDriver(Node):
 			self._stop()
 			self.timed_out = True
 
-	# ------------------------------------------------------------------
-	# Encoder publishing path
-	# ------------------------------------------------------------------
 	def _read_enc_m1(self) -> Optional[int]:
 		try:
 			return self._extract_value(self.rc.ReadEncM1(self.address))

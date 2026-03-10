@@ -9,7 +9,7 @@ def launch_setup(context, *args, **kwargs):
 	namespace = LaunchConfiguration('namespace').perform(context)
 
 	if namespace == 'bigred1':
-		use_encoders = True
+		use_encoders = False
 		read_encoders = True
 		reverse_steering = False
 		left_trim = 1.0
@@ -20,7 +20,7 @@ def launch_setup(context, *args, **kwargs):
 		read_encoders = True
 		reverse_steering = True
 		left_trim = 1.0
-		right_trim = 1.0
+		right_trim = 0.93
 		log_msg = 'roboclaw launch: bigred2 open loop, encoders still publishing'
 	else:
 		use_encoders = False
@@ -72,7 +72,7 @@ def launch_setup(context, *args, **kwargs):
 				'left_joint_name': 'left_wheel_joint',
 				'right_joint_name': 'right_wheel_joint',
 
-				'max_wheel_speed_rad_s': 350.0,
+				'max_wheel_speed_rad_s': 200.0,
 				'max_accel_cps2': 730000,
 
 				'left_trim': left_trim,
@@ -80,7 +80,7 @@ def launch_setup(context, *args, **kwargs):
 				'max_duty_scale': 1.0,
 
 				'linear_gain_to_wheel_cmd': 1.0,
-				'angular_gain_to_wheel_cmd': 1.4,
+				'angular_gain_to_wheel_cmd': 1.0,
 
 				'encoder_poll_period_sec': 0.05,
 

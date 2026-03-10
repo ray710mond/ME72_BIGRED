@@ -12,19 +12,20 @@ from geometry_msgs.msg import Twist
 class TimedVelocityAutonomy(Node):
     """
     Subscribes:
-      /autonomous_active (std_msgs/Bool)
+      (none)
 
     Publishes:
       /cmd_vel_auto (geometry_msgs/Twist)
+      /intake_running (std_msgs/Bool)
 
     Behavior:
-      - When /autonomous_active == True:
-          Executes a sequence of velocity "segments".
-          Each segment is (vx, vy, wz, duration_sec).
-      - When /autonomous_active == False:
-          Immediately publishes zero Twist and stops/resets the plan.
+      - Starts executing a sequence of velocity "segments" immediately on
+        startup and continues until the plan completes (or loops if
+        configured).
+      - After the plan finishes the node becomes idle.  Control may still be
+        overridden by higher-priority topics such as `cmd_vel_teleop` via a
+        mux.
     """
-
     def __init__(self):
         super().__init__("autonomous_planner")
 
@@ -36,16 +37,17 @@ class TimedVelocityAutonomy(Node):
         self.declare_parameter("loop", False)
 
         # Segments are flattened groups of 4:
-        #   [vx0, vy0, wz0, t0,  vx1, vy1, wz1, t1,  ...]
-        # Units: m/s, m/s, rad/s, seconds
+        #   [vx0, wz0, intake_flag0, duration_sec,  vx1, wz1, intake_flag1, duration_sec,  ...]
+        # Units: m/s, rad/s, bool-as-0/1, seconds
         self.declare_parameter(
             "segments",
             [
-                0.30, 0.00, 0.00, 1.5,   # forward 1.5s
-                0.00, 0.00, 1.00, 0.8,   # rotate left 0.8s
-                0.30, 0.00, 0.00, 1.0,   # forward 1.0s
-                0.00, 0.00, -1.00, 0.8,  # rotate right 0.8s
-                0.25, 0.00, 0.00, 1.2,   # forward 1.2s
+                0.4, 0.00, 0, 1.8,   # forward 1.8s, intake off
+                0.00, -1.00, 0, 0.8,   # rotate left 0.8s
+                0.2, 0.00, 1, 1.0,   # forward 1.0s, intake on
+                0.00, -1.00, 1, 1.6,  # rotate right 1.6s
+                0.2, 0.00, 1, 3.0,   # forward 3.0s
+                0, 0, 0, 0.0,      # stop (duration ignored since it's last)
             ],
         )
 
@@ -60,14 +62,16 @@ class TimedVelocityAutonomy(Node):
 
         # ---- ROS I/O ----
         self.cmd_pub = self.create_publisher(Twist, "cmd_vel_auto", 10)
-        self.active_sub = self.create_subscription(Bool, "autonomous_active", self._on_active, 10)
+        self.intake_pub = self.create_publisher(Bool, "intake_running", 10)
+
+        # we watch for teleop input so we can abort the autonomous plan
+        self.sub_teleop = self.create_subscription(Twist, "cmd_vel_teleop", self._on_teleop, 10)
 
         # Timer for periodic publishing / state machine
         period = 1.0 / max(self.publish_hz, 1e-6)
         self.timer = self.create_timer(period, self._tick)
 
         # ---- State ----
-        self.autonomous_active = False
         self.running = False
         self.seg_idx = 0
         self.seg_start_t = 0.0
@@ -76,39 +80,29 @@ class TimedVelocityAutonomy(Node):
             f"autonomous_planner ready. publish_hz={self.publish_hz}, loop={self.loop}, segments={len(self.segments)}"
         )
 
+        # Start the plan immediately on boot
+        self._start_plan()
+
     def _parse_segments(self, flat: List[float]) -> List[List[float]]:
         segs: List[List[float]] = []
         if len(flat) % 4 != 0:
             self.get_logger().warn(
                 f"'segments' length is {len(flat)} (not divisible by 4). "
-                "Expected [vx, vy, wz, t] repeated. Extra values will be ignored."
+                "Expected [vx, wz, intake, t] repeated. Extra values will be ignored."
             )
 
         n = (len(flat) // 4) * 4
         for i in range(0, n, 4):
-            vx, vy, wz, dur = float(flat[i]), float(flat[i + 1]), float(flat[i + 2]), float(flat[i + 3])
+            vx = float(flat[i])
+            wz = float(flat[i + 1])
+            intake_flag = bool(flat[i + 2])
+            dur = float(flat[i + 3])
             if dur <= 0.0:
                 self.get_logger().warn(f"Skipping segment {i//4}: duration must be > 0 (got {dur}).")
                 continue
-            segs.append([vx, vy, wz, dur])
+            segs.append([vx, wz, intake_flag, dur])
         return segs
 
-    def _on_active(self, msg: Bool) -> None:
-        new_active = bool(msg.data)
-
-        # Rising edge: start plan
-        if new_active and not self.autonomous_active:
-            self.autonomous_active = True
-            self._start_plan()
-
-        # Falling edge: stop immediately
-        elif (not new_active) and self.autonomous_active:
-            self.autonomous_active = False
-            self._stop_plan(publish_zero=True)
-
-        # No change: do nothing
-        else:
-            self.autonomous_active = new_active
 
     def _start_plan(self) -> None:
         if not self.segments:
@@ -125,7 +119,7 @@ class TimedVelocityAutonomy(Node):
         # Publish first command immediately
         self._publish_current_segment()
 
-    def _stop_plan(self, publish_zero: bool = True) -> None:
+    def _stop_plan(self, publish_zero: bool = False) -> None:
         if self.running:
             self.get_logger().info("Autonomy STOP")
 
@@ -137,15 +131,13 @@ class TimedVelocityAutonomy(Node):
             self._publish_zero()
 
     def _tick(self) -> None:
-        # Always publish zero if inactive (helps downstream controllers settle)
-        if not self.autonomous_active or not self.running:
-            # Don’t spam logs; just publish zero
-            self._publish_zero()
+        # Do nothing if plan is not running
+        if not self.running:
             return
 
         # Check if current segment duration elapsed
         now = time.monotonic()
-        vx, vy, wz, dur = self.segments[self.seg_idx]
+        vx, wz, intake_flag, dur = self.segments[self.seg_idx]
         if (now - self.seg_start_t) >= dur:
             self.seg_idx += 1
 
@@ -166,16 +158,29 @@ class TimedVelocityAutonomy(Node):
         self._publish_current_segment()
 
     def _publish_current_segment(self) -> None:
-        vx, vy, wz, _dur = self.segments[self.seg_idx]
+        vx, wz, intake_flag, _dur = self.segments[self.seg_idx]
         msg = Twist()
         msg.linear.x = float(vx)
-        msg.linear.y = float(vy)   # for holonomic; leave 0 for diff-drive
         msg.angular.z = float(wz)
         self.cmd_pub.publish(msg)
 
+        imsg = Bool()
+        imsg.data = bool(intake_flag)
+        self.intake_pub.publish(imsg)
+
     def _publish_zero(self) -> None:
+        # helper used on shutdown or exceptional cases
         msg = Twist()
         self.cmd_pub.publish(msg)
+        imsg = Bool()
+        imsg.data = False
+        self.intake_pub.publish(imsg)
+
+    def _on_teleop(self, msg: Twist) -> None:
+        # teleop override received; stop the autonomous plan permanently
+        if self.running:
+            self.get_logger().info("Teleop received – aborting autonomous plan")
+            self._stop_plan(publish_zero=True)
 
 
 def main():

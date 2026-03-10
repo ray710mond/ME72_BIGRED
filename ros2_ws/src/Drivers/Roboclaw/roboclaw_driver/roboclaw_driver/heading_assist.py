@@ -36,11 +36,11 @@ class ImuHeadingAssist(Node):
 		self.declare_parameter('kp_heading', 1.0)
 		self.declare_parameter('ki_heading', 0.05)
 
-		self.declare_parameter('kp_yaw_rate', 1.2)
+		self.declare_parameter('kp_yaw_rate', 2.0)
 		self.declare_parameter('ki_yaw_rate', 0.10)
 
 		self.declare_parameter('max_heading_correction', 0.35)
-		self.declare_parameter('max_yaw_rate_correction', 0.30)
+		self.declare_parameter('max_yaw_rate_correction', 1.0)
 
 		self.declare_parameter('max_linear_cmd', 1.0)
 		self.declare_parameter('max_angular_cmd', 1.0)
@@ -85,7 +85,7 @@ class ImuHeadingAssist(Node):
 
 		self.sub_cmd = self.create_subscription(
 			Twist,
-			'cmd_vel_des',
+			'cmd_vel_auto',
 			self._cmd_cb,
 			20
 		)
@@ -99,7 +99,7 @@ class ImuHeadingAssist(Node):
 
 		self.pub_cmd = self.create_publisher(
 			Twist,
-			'cmd_vel',
+			'cmd_vel_auto_filtered',
 			20
 		)
 
@@ -108,7 +108,7 @@ class ImuHeadingAssist(Node):
 			self._update_cb
 		)
 
-		self.get_logger().info("imu_heading_assist ready")
+		self.get_logger().info('imu_heading_assist ready: cmd_vel_auto -> cmd_vel_auto_filtered')
 
 	def _cmd_cb(self, msg: Twist):
 		self.des_v = float(msg.linear.x)
@@ -116,7 +116,6 @@ class ImuHeadingAssist(Node):
 		self.last_cmd_time = self.get_clock().now()
 
 	def _imu_cb(self, msg: Imu):
-
 		now = self.get_clock().now()
 
 		if self.last_imu_time is not None:
@@ -125,49 +124,38 @@ class ImuHeadingAssist(Node):
 				self.yaw = wrap_to_pi(self.yaw + self.gyro_z * dt)
 
 		self.gyro_z = float(msg.angular_velocity.z) * self.imu_gyro_z_sign
-
 		self.last_imu_time = now
 		self.have_imu = True
 
-	def _publish_cmd(self, v, w):
-
+	def _publish_cmd(self, v: float, w: float):
 		msg = Twist()
 		msg.linear.x = float(v)
 		msg.angular.z = float(w)
-
 		self.pub_cmd.publish(msg)
 
 	def _update_cb(self):
-
 		now = self.get_clock().now()
 
 		dt = (now - self.last_update_time).nanoseconds / 1e9
-		if dt <= 0 or dt > 0.2:
+		if dt <= 0.0 or dt > 0.2:
 			dt = 1.0 / self.control_rate_hz
-
 		self.last_update_time = now
 
 		cmd_age = (now - self.last_cmd_time).nanoseconds / 1e9
 
 		if cmd_age > self.cmd_timeout_sec:
-
 			self.heading_hold_active = False
 			self.int_heading = 0.0
 			self.int_yaw_rate = 0.0
-
 			self._publish_cmd(0.0, 0.0)
 			return
 
-		if not self.have_imu:
-
-			self._publish_cmd(
-				clamp(self.des_v, -self.max_linear_cmd, self.max_linear_cmd),
-				clamp(self.des_w, -self.max_angular_cmd, self.max_angular_cmd)
-			)
-			return
-
 		v_cmd = clamp(self.des_v, -self.max_linear_cmd, self.max_linear_cmd)
-		w_cmd = self.des_w
+		w_cmd = clamp(self.des_w, -self.max_angular_cmd, self.max_angular_cmd)
+
+		if not self.have_imu:
+			self._publish_cmd(v_cmd, w_cmd)
+			return
 
 		is_straight = (
 			abs(v_cmd) >= self.straight_linear_threshold and
@@ -175,7 +163,6 @@ class ImuHeadingAssist(Node):
 		)
 
 		if is_straight:
-
 			if not self.heading_hold_active:
 				self.heading_target = self.yaw
 				self.heading_hold_active = True
@@ -184,13 +171,10 @@ class ImuHeadingAssist(Node):
 			err = wrap_to_pi(self.heading_target - self.yaw)
 
 			self.int_heading += err * dt
-
 			max_int = self.max_heading_correction / max(self.ki_heading, 1e-6)
-
 			self.int_heading = clamp(self.int_heading, -max_int, max_int)
 
 			correction = self.kp_heading * err + self.ki_heading * self.int_heading
-
 			correction = clamp(
 				correction,
 				-self.max_heading_correction,
@@ -198,24 +182,19 @@ class ImuHeadingAssist(Node):
 			)
 
 			w_out = correction
-
 			self.int_yaw_rate = 0.0
 
 		else:
-
 			self.heading_hold_active = False
 			self.int_heading = 0.0
 
 			err = w_cmd - self.gyro_z
 
 			self.int_yaw_rate += err * dt
-
 			max_int = self.max_yaw_rate_correction / max(self.ki_yaw_rate, 1e-6)
-
 			self.int_yaw_rate = clamp(self.int_yaw_rate, -max_int, max_int)
 
 			correction = self.kp_yaw_rate * err + self.ki_yaw_rate * self.int_yaw_rate
-
 			correction = clamp(
 				correction,
 				-self.max_yaw_rate_correction,
@@ -225,24 +204,19 @@ class ImuHeadingAssist(Node):
 			w_out = w_cmd + correction
 
 		w_out = clamp(w_out, -self.max_angular_cmd, self.max_angular_cmd)
-
 		self._publish_cmd(v_cmd, w_out)
 
 
 def main(args=None):
-
 	rclpy.init(args=args)
-
 	node = ImuHeadingAssist()
-
 	try:
 		rclpy.spin(node)
 	except KeyboardInterrupt:
 		pass
-
 	node.destroy_node()
 	rclpy.shutdown()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
 	main()

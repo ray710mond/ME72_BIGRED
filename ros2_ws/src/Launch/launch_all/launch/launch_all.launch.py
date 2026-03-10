@@ -62,16 +62,6 @@ def launch_setup(context, *args, **kwargs):
 		)
 	)
 
-	autonomous_launch_file = os.path.join(autonomous_pkg_share, 'launch', 'autonomous_planner.launch.py')
-	actions.append(
-		IncludeLaunchDescription(
-			PythonLaunchDescriptionSource(autonomous_launch_file),
-			launch_arguments={
-				'namespace': namespace,
-			}.items()
-		)
-	)
-
 	imu_launch_file = os.path.join(imu_pkg_share, 'launch', 'imu_driver.launch.py')
 	actions.append(
 		IncludeLaunchDescription(
@@ -86,6 +76,16 @@ def launch_setup(context, *args, **kwargs):
 	actions.append(
 		IncludeLaunchDescription(
 			PythonLaunchDescriptionSource(roboclaw_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+			}.items()
+		)
+	)
+
+	autonomous_launch_file = os.path.join(autonomous_pkg_share, 'launch', 'autonomous_planner.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(autonomous_launch_file),
 			launch_arguments={
 				'namespace': namespace,
 			}.items()
