@@ -12,7 +12,7 @@ def generate_launch_description():
 	)
 
 	namespace = LaunchConfiguration('namespace')
-	if namespace == 'bigred1'
+	if namespace == 'bigred1':
 		return LaunchDescription([
 			namespace_arg,
 			Node(
