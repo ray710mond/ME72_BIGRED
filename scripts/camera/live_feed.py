@@ -47,12 +47,14 @@ def find_ffplay() -> str:
 def main():
     parser = argparse.ArgumentParser(description="Live camera viewer")
     parser.add_argument("--port", type=int, default=5000, help="UDP port (default: 5000)")
+    parser.add_argument("--no-transpose", action="store_true",
+                        help="Skip transpose (use when Pi already rotates, e.g. navigate.py --rotate-output 90)")
     args = parser.parse_args()
 
     ffplay = find_ffplay()
     print(f"Listening for MJPEG stream on port {args.port}  (Ctrl+C to stop)")
     try:
-        subprocess.run([
+        cmd = [
             ffplay,
             "-fflags", "nobuffer+discardcorrupt",
             "-flags", "low_delay",
@@ -62,10 +64,11 @@ def main():
             "-analyzeduration", "0",
             "-fpsprobesize", "0",
             "-sync", "video",
-            "-vf", "transpose=2",
-            "-f", "mjpeg",
-            f"udp://0.0.0.0:{args.port}?buffer_size={UDP_RECV_BUF}",
-        ])
+        ]
+        if not args.no_transpose:
+            cmd.extend(["-vf", "transpose=2"])
+        cmd.extend(["-f", "mjpeg", f"udp://0.0.0.0:{args.port}?buffer_size={UDP_RECV_BUF}"])
+        subprocess.run(cmd)
     except KeyboardInterrupt:
         print("\nStopped.")
 
