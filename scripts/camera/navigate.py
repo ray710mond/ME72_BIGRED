@@ -31,7 +31,6 @@ from hole_detection import (
     process_frame,
     _can_show_windows,
     _bboxes_overlap,
-    _frame_changed,
     _BRIGHTNESS_THRESHOLDS,
     _MIN_OVERLAP_IOU,
     _OVERLAP_GRACE_AFTER,
@@ -76,6 +75,12 @@ _STREAM_QUALITY = 50
 _STREAM_SCALE = 0.5       # resize annotated frames before streaming (1.0 = full res)
 _UDP_CHUNK = 32768
 
+# Max MJPEG buffer size to prevent unbounded memory growth on Pi (causes crash)
+_MAX_MJPEG_BUF = 4 * 1024 * 1024  # 4 MB
+
+# Print throttle: avoid flooding stdout (every N frames ~= 1/sec at 30fps)
+_PRINT_EVERY_N = 30
+
 
 # ---------------------------------------------------------------------------
 # MJPEG stdin reader  (frame-dropping for real-time)
@@ -110,6 +115,11 @@ def mjpeg_stdin_frames(raw_streamer=None):
             return
         buf.extend(chunk)
 
+        # Cap buffer to prevent unbounded memory growth (Pi crash after ~1.5 min)
+        if len(buf) > _MAX_MJPEG_BUF:
+            # Keep only the tail; drop stale data to stay real-time
+            buf = buf[-_MAX_MJPEG_BUF // 2 :]
+
         # Non-blocking drain: grab everything the pipe has buffered
         while _sel.select([fd], [], [], 0)[0]:
             try:
@@ -119,6 +129,8 @@ def mjpeg_stdin_frames(raw_streamer=None):
             if not more:
                 break
             buf.extend(more)
+            if len(buf) > _MAX_MJPEG_BUF:
+                buf = buf[-_MAX_MJPEG_BUF // 2 :]
 
         # Parse all complete JPEGs; forward raw bytes; keep only the last
         last_frame = None
@@ -286,6 +298,18 @@ def draw_nav_overlay(vis, current_result, target, throttle, steer, status):
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
 
 
+def _draw_debug_overlay(vis, result):
+    """Draw debug metrics on the frame (brightness, area, etc)."""
+    y = 60
+    for line in [
+        f"brightness={result.get('mean_brightness', 0):.1f}",
+        f"area={result.get('contour_area', 0):.0f}",
+        f"orange={result.get('orange_pixels', 0)}",
+    ]:
+        cv2.putText(vis, line, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        y += 20
+
+
 def draw_confirm_overlay(vis, coords, thresh_val):
     if coords is not None:
         pts = np.array(coords, dtype=np.int32)
@@ -365,9 +389,10 @@ def main():
                              "Replaces stream_camera.sh.")
     parser.add_argument("--skip-confirm", action="store_true",
                         help="Skip interactive confirmation, go straight to navigation.")
-    parser.add_argument("--no-motion-check", action="store_true",
-                        help="Disable motion detection during confirmation (use if Pi camera "
-                             "auto-exposure keeps triggering false positives).")
+    parser.add_argument("--debug", action="store_true",
+                        help="Verbose terminal output + extra overlay on stream (brightness, area, etc).")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print every frame (default: throttle to ~1/sec to avoid Pi crash).")
     parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270],
                         help="Rotate each frame CW by this many degrees before processing "
                              "(use if camera is mounted sideways). live_feed.py transpose=2 "
@@ -418,37 +443,27 @@ def main():
 
             confirmed = False
             thresh_idx = 0
-            reference_confirm_gray = None
-            _SETTLE_FRAMES = 60  # let auto-exposure stabilize before checking motion (~2s @ 30fps)
             frames_seen = 0
 
             for frame in frames:
                 frames_seen += 1
                 frame_idx += 1
 
-                cur_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                if not args.no_motion_check:
-                    if frame_idx <= _SETTLE_FRAMES:
-                        reference_confirm_gray = cur_gray
-                    elif _frame_changed(cur_gray, reference_confirm_gray, hole_mask=None):
-                        raise SystemExit(
-                            "Robot moved before contour was confirmed. "
-                            "Reposition the robot and restart."
-                        )
-
                 thresh_val = _BRIGHTNESS_THRESHOLDS[thresh_idx]
                 result = process_frame(
                     frame,
                     left_roi_fraction=args.left_roi,
                     display=False,
-                    debug=False,
-                    verbose=False,
+                    debug=args.debug,
+                    verbose=args.debug,
                     brightness_threshold=thresh_val,
                 )
                 coords = result.get("coordinates") if result else None
 
                 vis = frame.copy()
                 draw_confirm_overlay(vis, coords, thresh_val)
+                if args.debug and result is not None:
+                    _draw_debug_overlay(vis, result)
 
                 if show_windows:
                     cv2.imshow("Confirm Contour", vis)
@@ -518,8 +533,8 @@ def main():
                 frame,
                 left_roi_fraction=args.left_roi,
                 display=False,
-                debug=False,
-                verbose=False,
+                debug=args.debug,
+                verbose=args.debug,
             )
             coords = result.get("coordinates") if result else None
 
@@ -587,7 +602,8 @@ def main():
             else:
                 throttle, steer, status = 0.0, 0.0, "no detection"
 
-            print(f"frame={frame_idx}  {status}")
+            if args.verbose or frame_idx % _PRINT_EVERY_N == 0:
+                print(f"frame={frame_idx}  {status}")
 
             # TODO: publish Twist(linear.x=throttle, angular.z=steer) to /cmd_vel_auto
 
@@ -597,6 +613,8 @@ def main():
                 draw_nav_overlay(vis, result, target, throttle, steer, status)
             else:
                 draw_nav_overlay(vis, None, target, throttle, steer, status)
+            if args.debug and result is not None:
+                _draw_debug_overlay(vis, result)
 
             if show_windows:
                 cv2.imshow("Navigate", vis)
