@@ -9,15 +9,16 @@ streams annotated video back to a Mac for live viewing.
 Usage on Pi (competition day):
   rpicam-vid -n -t 0 --width 1280 --height 720 --framerate 30 \
       --codec mjpeg --buffer-count 1 -o - 2>/dev/null \
-    | python3 navigate.py --stdin --stream-to MAC_IP:5000
+    | python3 navigate.py --stdin --stream-to YOUR_MAC_IP:5000
 
 Usage on Mac (testing with recorded video):
   python3 navigate.py --source test.mjpeg --display --every 1
 
-On Mac (view the Pi stream):
-  python3 live_feed.py
+On Mac (view the Pi stream; use --no-transpose since Pi rotates output):
+  python3 live_feed.py --no-transpose
 """
 
+import gc
 import json
 import argparse
 import socket
@@ -31,7 +32,6 @@ from hole_detection import (
     process_frame,
     _can_show_windows,
     _bboxes_overlap,
-    _frame_changed,
     _BRIGHTNESS_THRESHOLDS,
     _MIN_OVERLAP_IOU,
     _OVERLAP_GRACE_AFTER,
@@ -72,9 +72,32 @@ LEFT_ROI = 0.10
 _DEFAULT_TARGET = Path(__file__).with_name("target.json")
 
 # JPEG quality for the UDP stream to the Mac (lower = smaller packets)
-_STREAM_QUALITY = 50
-_STREAM_SCALE = 0.5       # resize annotated frames before streaming (1.0 = full res)
+_STREAM_QUALITY = 40
+_STREAM_SCALE = 0.25      # resize before streaming (reduces memory/CPU on Pi)
 _UDP_CHUNK = 32768
+
+# Max MJPEG buffer size to prevent unbounded memory growth on Pi (causes crash)
+_MAX_MJPEG_BUF = 2 * 1024 * 1024  # 2 MB (reduced from 4 MB)
+
+# Print throttle: avoid flooding stdout (every N frames ~= 1/sec at 30fps)
+_PRINT_EVERY_N = 30
+
+# GC every N frames to prevent memory fragmentation on Pi
+_GC_INTERVAL = 50
+
+# Output rotation: 90 CW = upright text when camera is sideways
+_OUTPUT_ROTATE_MAP = {
+    0: None,
+    90: cv2.ROTATE_90_CLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+}
+
+
+def _prepare_output(frame: np.ndarray, rotate_deg: int) -> np.ndarray:
+    """Return frame ready for display/stream (rotated if requested)."""
+    rot = _OUTPUT_ROTATE_MAP.get(rotate_deg)
+    return cv2.rotate(frame, rot) if rot is not None else frame
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +133,11 @@ def mjpeg_stdin_frames(raw_streamer=None):
             return
         buf.extend(chunk)
 
+        # Cap buffer to prevent unbounded memory growth (Pi crash after ~1.5 min)
+        if len(buf) > _MAX_MJPEG_BUF:
+            # Keep only the tail; drop stale data to stay real-time
+            buf = buf[-_MAX_MJPEG_BUF // 2 :]
+
         # Non-blocking drain: grab everything the pipe has buffered
         while _sel.select([fd], [], [], 0)[0]:
             try:
@@ -119,6 +147,8 @@ def mjpeg_stdin_frames(raw_streamer=None):
             if not more:
                 break
             buf.extend(more)
+            if len(buf) > _MAX_MJPEG_BUF:
+                buf = buf[-_MAX_MJPEG_BUF // 2 :]
 
         # Parse all complete JPEGs; forward raw bytes; keep only the last
         last_frame = None
@@ -150,11 +180,16 @@ def mjpeg_stdin_frames(raw_streamer=None):
 # UDP frame streamer  (Pi -> Mac)
 # ---------------------------------------------------------------------------
 class UDPStreamer:
-    """Send JPEG-encoded frames over UDP for live_feed.py / ffplay."""
+    """Send JPEG-encoded frames over UDP for live_feed.py / ffplay.
+
+    Uses non-blocking socket: drops frames if send buffer is full to prevent
+    memory buildup that crashes the Pi.
+    """
 
     def __init__(self, host: str, port: int):
         self.addr = (host, port)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setblocking(False)
 
     def send(self, frame: np.ndarray):
         """Re-encode a numpy frame as JPEG and send (resized for speed)."""
@@ -167,9 +202,12 @@ class UDPStreamer:
         self.send_raw(jpeg.tobytes())
 
     def send_raw(self, data: bytes):
-        """Send raw JPEG bytes (no re-encoding)."""
-        for i in range(0, len(data), _UDP_CHUNK):
-            self.sock.sendto(data[i : i + _UDP_CHUNK], self.addr)
+        """Send raw JPEG bytes (no re-encoding). Drops if buffer full."""
+        try:
+            for i in range(0, len(data), _UDP_CHUNK):
+                self.sock.sendto(data[i : i + _UDP_CHUNK], self.addr)
+        except BlockingIOError:
+            pass  # drop frame to avoid memory buildup
 
     def close(self):
         self.sock.close()
@@ -286,6 +324,18 @@ def draw_nav_overlay(vis, current_result, target, throttle, steer, status):
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
 
 
+def _draw_debug_overlay(vis, result):
+    """Draw debug metrics on the frame (brightness, area, etc)."""
+    y = 60
+    for line in [
+        f"brightness={result.get('mean_brightness', 0):.1f}",
+        f"area={result.get('contour_area', 0):.0f}",
+        f"orange={result.get('orange_pixels', 0)}",
+    ]:
+        cv2.putText(vis, line, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        y += 20
+
+
 def draw_confirm_overlay(vis, coords, thresh_val):
     if coords is not None:
         pts = np.array(coords, dtype=np.int32)
@@ -365,13 +415,14 @@ def main():
                              "Replaces stream_camera.sh.")
     parser.add_argument("--skip-confirm", action="store_true",
                         help="Skip interactive confirmation, go straight to navigation.")
-    parser.add_argument("--no-motion-check", action="store_true",
-                        help="Disable motion detection during confirmation (use if Pi camera "
-                             "auto-exposure keeps triggering false positives).")
+    parser.add_argument("--debug", action="store_true",
+                        help="Verbose terminal output + extra overlay on stream (brightness, area, etc).")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print every frame (default: throttle to ~1/sec to avoid Pi crash).")
     parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270],
-                        help="Rotate each frame CW by this many degrees before processing "
-                             "(use if camera is mounted sideways). live_feed.py transpose=2 "
-                             "= 90 CW, so use --rotate 270 to undo that and process upright.")
+                        help="Rotate each frame CW before processing (camera mount).")
+    parser.add_argument("--rotate-output", type=int, default=90, choices=[0, 90, 180, 270],
+                        help="Rotate display/stream output CW (default 90 = upright text).")
     parser.add_argument("--left-roi", type=float, default=LEFT_ROI)
     args = parser.parse_args()
 
@@ -418,44 +469,34 @@ def main():
 
             confirmed = False
             thresh_idx = 0
-            reference_confirm_gray = None
-            _SETTLE_FRAMES = 60  # let auto-exposure stabilize before checking motion (~2s @ 30fps)
             frames_seen = 0
 
             for frame in frames:
                 frames_seen += 1
                 frame_idx += 1
 
-                cur_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                if not args.no_motion_check:
-                    if frame_idx <= _SETTLE_FRAMES:
-                        reference_confirm_gray = cur_gray
-                    elif _frame_changed(cur_gray, reference_confirm_gray, hole_mask=None):
-                        raise SystemExit(
-                            "Robot moved before contour was confirmed. "
-                            "Reposition the robot and restart."
-                        )
-
                 thresh_val = _BRIGHTNESS_THRESHOLDS[thresh_idx]
                 result = process_frame(
                     frame,
                     left_roi_fraction=args.left_roi,
                     display=False,
-                    debug=False,
-                    verbose=False,
+                    debug=args.debug,
+                    verbose=args.debug,
                     brightness_threshold=thresh_val,
                 )
                 coords = result.get("coordinates") if result else None
 
-                vis = frame.copy()
-                draw_confirm_overlay(vis, coords, thresh_val)
+                draw_confirm_overlay(frame, coords, thresh_val)
+                if args.debug and result is not None:
+                    _draw_debug_overlay(frame, result)
 
+                out = _prepare_output(frame, args.rotate_output)
                 if show_windows:
-                    cv2.imshow("Confirm Contour", vis)
+                    cv2.imshow("Confirm Contour", out)
                     key_raw = cv2.waitKey(30) & 0xFF
                     key = chr(key_raw) if key_raw < 128 else ""
                 elif streamer:
-                    streamer.send(vis)
+                    streamer.send(out)
                     key = _tty_key(tty)
                 else:
                     key = ""
@@ -480,6 +521,9 @@ def main():
                     if thresh_idx >= len(_BRIGHTNESS_THRESHOLDS):
                         raise SystemExit("REPOSITION ROBOT -- all thresholds rejected.")
                     print(f"  Switched to threshold={_BRIGHTNESS_THRESHOLDS[thresh_idx]}")
+
+                if frames_seen % _GC_INTERVAL == 0:
+                    gc.collect()
 
             if not confirmed:
                 if frames_seen == 0:
@@ -509,7 +553,8 @@ def main():
 
             if args.every > 1 and (frame_idx % args.every) != 0:
                 if show_windows:
-                    cv2.imshow("Navigate", frame)
+                    out = _prepare_output(frame, args.rotate_output)
+                    cv2.imshow("Navigate", out)
                     if (cv2.waitKey(1) & 0xFF) == ord("q"):
                         break
                 continue
@@ -518,8 +563,8 @@ def main():
                 frame,
                 left_roi_fraction=args.left_roi,
                 display=False,
-                debug=False,
-                verbose=False,
+                debug=args.debug,
+                verbose=args.debug,
             )
             coords = result.get("coordinates") if result else None
 
@@ -587,23 +632,29 @@ def main():
             else:
                 throttle, steer, status = 0.0, 0.0, "no detection"
 
-            print(f"frame={frame_idx}  {status}")
+            if args.verbose or frame_idx % _PRINT_EVERY_N == 0:
+                print(f"frame={frame_idx}  {status}")
 
             # TODO: publish Twist(linear.x=throttle, angular.z=steer) to /cmd_vel_auto
 
-            # --- visual output ---
-            vis = frame.copy()
+            # --- visual output (draw in-place to avoid memory buildup) ---
             if coords is not None:
-                draw_nav_overlay(vis, result, target, throttle, steer, status)
+                draw_nav_overlay(frame, result, target, throttle, steer, status)
             else:
-                draw_nav_overlay(vis, None, target, throttle, steer, status)
+                draw_nav_overlay(frame, None, target, throttle, steer, status)
+            if args.debug and result is not None:
+                _draw_debug_overlay(frame, result)
 
+            out = _prepare_output(frame, args.rotate_output)
             if show_windows:
-                cv2.imshow("Navigate", vis)
+                cv2.imshow("Navigate", out)
                 if (cv2.waitKey(1) & 0xFF) == ord("q"):
                     break
             if streamer:
-                streamer.send(vis)
+                streamer.send(out)
+
+            if frame_idx % _GC_INTERVAL == 0:
+                gc.collect()
 
     finally:
         if tty:
