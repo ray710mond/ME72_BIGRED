@@ -10,19 +10,22 @@ def launch_setup(context, *args, **kwargs):
 
 	if namespace == 'bigred1':
 		use_encoders = True
+		read_encoders = True
 		left_trim = 1.0
 		right_trim = 1.0
-		log_msg = 'roboclaw launch: bigred1 encoder mode'
+		log_msg = 'roboclaw launch: bigred1 open loop, encoders still publishing'
 	elif namespace == 'bigred2':
 		use_encoders = False
-		left_trim = 1.0
-		right_trim = 0.93
-		log_msg = 'roboclaw launch: bigred2 open loop'
-	else:
-		use_encoders = False
+		read_encoders = True
 		left_trim = 1.0
 		right_trim = 1.0
-		log_msg = 'roboclaw launch: unknown namespace'
+		log_msg = 'roboclaw launch: bigred2 open loop, encoders still publishing'
+	else:
+		use_encoders = False
+		read_encoders = True
+		left_trim = 1.0
+		right_trim = 1.0
+		log_msg = 'roboclaw launch: unknown namespace, open loop, encoders still publishing'
 
 	return [
 
@@ -43,12 +46,12 @@ def launch_setup(context, *args, **kwargs):
 			namespace=namespace,
 			output='screen',
 			parameters=[{
-
 				'port': '/dev/ttyACM0',
 				'baud': 115200,
 				'address': 0x80,
 
 				'use_encoders': use_encoders,
+				'read_encoders': read_encoders,
 
 				'cmd_timeout_sec': 0.25,
 				'watchdog_period_sec': 0.05,
@@ -65,8 +68,8 @@ def launch_setup(context, *args, **kwargs):
 				'left_joint_name': 'left_wheel_joint',
 				'right_joint_name': 'right_wheel_joint',
 
-				'max_wheel_speed_rad_s': 8.0,
-				'max_accel_cps2': 50000,
+				'max_wheel_speed_rad_s': 350.0,
+				'max_accel_cps2': 730000,
 
 				'left_trim': left_trim,
 				'right_trim': right_trim,

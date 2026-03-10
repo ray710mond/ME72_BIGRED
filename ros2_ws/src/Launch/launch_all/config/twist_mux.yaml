@@ -11,5 +11,3 @@
         topic: cmd_vel_auto
         timeout: 0.5
         priority: 10
-
-    locks: {}
