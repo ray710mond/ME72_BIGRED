@@ -7,6 +7,7 @@ from launch_ros.actions import Node
 def launch_setup(context, *args, **kwargs):
 
 	namespace = LaunchConfiguration('namespace').perform(context)
+	start_delay = float(LaunchConfiguration('start_delay').perform(context))
 
 	if namespace == 'bigred1':
 		exec_name = 'autonomous_planner_pellets'
@@ -22,6 +23,7 @@ def launch_setup(context, *args, **kwargs):
 			name='autonomous_planner',
 			namespace=namespace,
 			output='screen',
+			parameters=[{'start_delay': start_delay}],
 		)
 	]
 
@@ -29,5 +31,7 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
 
 	return LaunchDescription([
+		DeclareLaunchArgument('start_delay', default_value='0.0',
+					description='seconds to wait before sending first autonomy command'),
 		OpaqueFunction(function=launch_setup),
 	])

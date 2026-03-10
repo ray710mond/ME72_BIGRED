@@ -62,15 +62,15 @@ def launch_setup(context, *args, **kwargs):
 		)
 	)
 
-	imu_launch_file = os.path.join(imu_pkg_share, 'launch', 'imu_driver.launch.py')
-	actions.append(
-		IncludeLaunchDescription(
-			PythonLaunchDescriptionSource(imu_launch_file),
-			launch_arguments={
-				'namespace': namespace,
-			}.items()
-		)
-	)
+	# imu_launch_file = os.path.join(imu_pkg_share, 'launch', 'imu_driver.launch.py')
+	# actions.append(
+	# 	IncludeLaunchDescription(
+	# 		PythonLaunchDescriptionSource(imu_launch_file),
+	# 		launch_arguments={
+	# 			'namespace': namespace,
+	# 		}.items()
+	# 	)
+	# )
 
 	roboclaw_launch_file = os.path.join(roboclaw_pkg_share, 'launch', 'roboclaw_driver.launch.py')
 	actions.append(
@@ -82,20 +82,20 @@ def launch_setup(context, *args, **kwargs):
 		)
 	)
 
-	autonomous_launch_file = os.path.join(autonomous_pkg_share, 'launch', 'autonomous_planner.launch.py')
+	hole_detector_launch_file = os.path.join(hole_detector_pkg_share, 'launch', 'hole_detector.launch.py')
 	actions.append(
 		IncludeLaunchDescription(
-			PythonLaunchDescriptionSource(autonomous_launch_file),
+			PythonLaunchDescriptionSource(hole_detector_launch_file),
 			launch_arguments={
 				'namespace': namespace,
 			}.items()
 		)
 	)
 
-	hole_detector_launch_file = os.path.join(hole_detector_pkg_share, 'launch', 'hole_detector.launch.py')
+	autonomous_launch_file = os.path.join(autonomous_pkg_share, 'launch', 'autonomous_planner.launch.py')
 	actions.append(
 		IncludeLaunchDescription(
-			PythonLaunchDescriptionSource(hole_detector_launch_file),
+			PythonLaunchDescriptionSource(autonomous_launch_file),
 			launch_arguments={
 				'namespace': namespace,
 			}.items()

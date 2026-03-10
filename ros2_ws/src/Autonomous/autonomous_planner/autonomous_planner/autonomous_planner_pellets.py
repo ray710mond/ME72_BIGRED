@@ -76,12 +76,22 @@ class TimedVelocityAutonomy(Node):
         self.seg_idx = 0
         self.seg_start_t = 0.0
 
+        self.declare_parameter("start_delay", 0.0)
+        # time to wait (seconds) before beginning the first segment; helps
+        # ensure other nodes/controllers have spun up and that the first
+        # velocity command isn't lost during startup.
+        self.start_delay: float = float(self.get_parameter("start_delay").value)
+
         self.get_logger().info(
-            f"autonomous_planner ready. publish_hz={self.publish_hz}, loop={self.loop}, segments={len(self.segments)}"
+            f"autonomous_planner ready. publish_hz={self.publish_hz}, loop={self.loop}, segments={len(self.segments)}, start_delay={self.start_delay}"
         )
 
-        # Start the plan immediately on boot
-        self._start_plan()
+        # Start the plan after a short delay (or immediately if start_delay is 0)
+        if self.start_delay > 0.0:
+            # one-shot timer; cancel within the callback so it only fires once
+            self.start_timer = self.create_timer(self.start_delay, self._delayed_start)
+        else:
+            self._start_plan()
 
     def _parse_segments(self, flat: List[float]) -> List[List[float]]:
         segs: List[List[float]] = []
@@ -118,6 +128,14 @@ class TimedVelocityAutonomy(Node):
 
         # Publish first command immediately
         self._publish_current_segment()
+
+    def _delayed_start(self) -> None:
+        # callback invoked by the startup timer; cancel to avoid repeats
+        try:
+            self.start_timer.cancel()
+        except Exception:
+            pass
+        self._start_plan()
 
     def _stop_plan(self, publish_zero: bool = False) -> None:
         if self.running:

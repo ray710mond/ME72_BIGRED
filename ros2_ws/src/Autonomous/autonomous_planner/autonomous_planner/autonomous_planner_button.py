@@ -42,8 +42,8 @@ class TimedVelocityAutonomy(Node):
         self.declare_parameter(
             "segments",
             [
-                0.6, 0.02, 0.0, 0.5,   # forward 1.8s, intake off
-                0.2, 0.02, 0.0, 0.3,   # forward 0.3s, intake off
+                0.6, 0.02, 0.0, 2.0,   # forward 1.8s, intake off
+                0.2, 0.02, 0.0, 0.5,   # forward 0.3s, intake off
                 0.0, 0.0, 0.0, 1.0,      # stop (duration ignored since it's last)
             ],
         )
@@ -73,12 +73,17 @@ class TimedVelocityAutonomy(Node):
         self.seg_idx = 0
         self.seg_start_t = 0.0
 
+        self.declare_parameter("start_delay", 0.0)
+        self.start_delay: float = float(self.get_parameter("start_delay").value)
+
         self.get_logger().info(
-            f"autonomous_planner ready. publish_hz={self.publish_hz}, loop={self.loop}, segments={len(self.segments)}"
+            f"autonomous_planner ready. publish_hz={self.publish_hz}, loop={self.loop}, segments={len(self.segments)}, start_delay={self.start_delay}"
         )
 
-        # Start the plan immediately on boot
-        self._start_plan()
+        if self.start_delay > 0.0:
+            self.start_timer = self.create_timer(self.start_delay, self._delayed_start)
+        else:
+            self._start_plan()
 
     def _parse_segments(self, flat: List[float]) -> List[List[float]]:
         segs: List[List[float]] = []
@@ -115,6 +120,13 @@ class TimedVelocityAutonomy(Node):
 
         # Publish first command immediately
         self._publish_current_segment()
+
+    def _delayed_start(self) -> None:
+        try:
+            self.start_timer.cancel()
+        except Exception:
+            pass
+        self._start_plan()
 
     def _stop_plan(self, publish_zero: bool = False) -> None:
         if self.running:
