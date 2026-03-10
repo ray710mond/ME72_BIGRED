@@ -39,15 +39,15 @@ def launch_setup(context, *args, **kwargs):
 		)
 	)
 
-	# servo_launch_file = os.path.join(servo_pkg_share, 'launch', 'servo_driver.launch.py')
-	# actions.append(
-	# 	IncludeLaunchDescription(
-	# 		PythonLaunchDescriptionSource(servo_launch_file),
-	# 		launch_arguments={
-	# 			'namespace': namespace,
-	# 		}.items()
-	# 	)
-	# )
+	servo_launch_file = os.path.join(servo_pkg_share, 'launch', 'servo_driver.launch.py')
+	actions.append(
+		IncludeLaunchDescription(
+			PythonLaunchDescriptionSource(servo_launch_file),
+			launch_arguments={
+				'namespace': namespace,
+			}.items()
+		)
+	)
 
 	spark_launch_file = os.path.join(spark_pkg_share, 'launch', 'spark_driver.launch.py')
 	actions.append(

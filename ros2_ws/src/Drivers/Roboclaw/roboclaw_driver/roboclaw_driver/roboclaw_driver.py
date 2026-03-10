@@ -9,17 +9,21 @@ Subscribes:
 
 Publishes:
   - cmd_vel_applied            (geometry_msgs/msg/Twist)      filtered/applied command
-  - wheel_states               (sensor_msgs/msg/JointState)   [encoder mode]
-  - encoder/left/count         (std_msgs/msg/Int64)           [encoder mode]
-  - encoder/right/count        (std_msgs/msg/Int64)           [encoder mode]
-  - encoder/left/speed_cps     (std_msgs/msg/Int32)           [encoder mode]
-  - encoder/right/speed_cps    (std_msgs/msg/Int32)           [encoder mode]
+  - wheel_states               (sensor_msgs/msg/JointState)   [if read_encoders=True]
+  - encoder/left/count         (std_msgs/msg/Int64)           [if read_encoders=True]
+  - encoder/right/count        (std_msgs/msg/Int64)           [if read_encoders=True]
+  - encoder/left/speed_cps     (std_msgs/msg/Int32)           [if read_encoders=True]
+  - encoder/right/speed_cps    (std_msgs/msg/Int32)           [if read_encoders=True]
 
 Modes:
   - use_encoders = True:
       uses RoboClaw signed speed commands in counts/sec
   - use_encoders = False:
       uses duty-cycle open loop, with calibration trims
+
+Independent encoder publishing:
+  - read_encoders = True:
+      poll and publish encoder data regardless of control mode
 
 Important:
   - Do NOT run a separate encoder node on the same RoboClaw port at the same time.
@@ -51,7 +55,9 @@ class RoboclawHybridDriver(Node):
 		self.declare_parameter('baud', 115200)
 		self.declare_parameter('address', 0x80)
 
+		# Split control-vs-read behavior
 		self.declare_parameter('use_encoders', False)
+		self.declare_parameter('read_encoders', True)
 
 		self.declare_parameter('cmd_timeout_sec', 0.25)
 		self.declare_parameter('watchdog_period_sec', 0.05)
@@ -96,6 +102,7 @@ class RoboclawHybridDriver(Node):
 		self.address = int(self.get_parameter('address').value)
 
 		self.use_encoders = bool(self.get_parameter('use_encoders').value)
+		self.read_encoders = bool(self.get_parameter('read_encoders').value)
 
 		self.cmd_timeout_sec = float(self.get_parameter('cmd_timeout_sec').value)
 		watchdog_period_sec = float(self.get_parameter('watchdog_period_sec').value)
@@ -140,12 +147,13 @@ class RoboclawHybridDriver(Node):
 		# ---------------- I/O ----------------
 		self.sub = self.create_subscription(Twist, 'cmd_vel', self._cmd_cb, 20)
 
-		# Publish the filtered/applied body command
 		self.pub_cmd_vel_applied = self.create_publisher(Twist, 'cmd_vel_applied', 20)
 
 		self.watchdog_timer = self.create_timer(watchdog_period_sec, self._watchdog_cb)
 
-		if self.use_encoders:
+		# Create encoder publishers/timer whenever read_encoders is enabled,
+		# regardless of whether encoder feedback is used for control.
+		if self.read_encoders:
 			self.pub_left_count = self.create_publisher(Int64, 'encoder/left/count', 10)
 			self.pub_right_count = self.create_publisher(Int64, 'encoder/right/count', 10)
 			self.pub_left_speed = self.create_publisher(Int32, 'encoder/left/speed_cps', 10)
@@ -154,7 +162,9 @@ class RoboclawHybridDriver(Node):
 			self.encoder_timer = self.create_timer(encoder_poll_period_sec, self._encoder_poll_cb)
 
 		self.get_logger().info(
-			f'roboclaw_hybrid_driver ready port={port} use_encoders={self.use_encoders} '
+			f'roboclaw_hybrid_driver ready port={port} '
+			f'use_encoders={self.use_encoders} '
+			f'read_encoders={self.read_encoders} '
 			f'left_motor_command_sign={self.left_motor_command_sign} '
 			f'right_motor_command_sign={self.right_motor_command_sign}'
 		)
@@ -231,7 +241,6 @@ class RoboclawHybridDriver(Node):
 		left_cps_cmd = int(self.left_motor_command_sign * left_cps)
 		right_cps_cmd = int(self.right_motor_command_sign * right_cps)
 
-		# Be tolerant of library method naming.
 		if hasattr(self.rc, 'SpeedAccelM1M2'):
 			self.rc.SpeedAccelM1M2(
 				self.address,
@@ -242,7 +251,6 @@ class RoboclawHybridDriver(Node):
 		elif hasattr(self.rc, 'SpeedM1M2'):
 			self.rc.SpeedM1M2(self.address, left_cps_cmd, right_cps_cmd)
 		else:
-			# fallback to per-channel
 			if hasattr(self.rc, 'SpeedAccelM1') and hasattr(self.rc, 'SpeedAccelM2'):
 				self.rc.SpeedAccelM1(self.address, int(self.max_accel_cps2), left_cps_cmd)
 				self.rc.SpeedAccelM2(self.address, int(self.max_accel_cps2), right_cps_cmd)
