@@ -213,8 +213,7 @@ def compute_command(current_result: dict, target: dict):
 def draw_nav_overlay(vis, current_result, target, throttle, steer, status):
     tgt_corners = target["corners"]
     pts = np.array(tgt_corners, dtype=np.int32)
-    cv2.polylines(vis, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
-    for pt in tgt_corners: cv2.circle(vis, tuple(pt), 6, (0, 255, 0), -1)
+
     tgt_cx, tgt_cy = target["center"]
     cv2.drawMarker(vis, (int(tgt_cx), int(tgt_cy)), (0, 255, 0), cv2.MARKER_CROSS, 20, 2)
 
@@ -484,4 +483,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
